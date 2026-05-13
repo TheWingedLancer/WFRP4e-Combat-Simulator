@@ -96,6 +96,21 @@ export function applyCritEffectsToCombatant(victim, attacker, critItem, descript
   return applied;
 }
 
+/**
+ * Decide whether an Active Effect is durational (lasts for the iteration)
+ * or permanent (already baked into actor stats). Priority:
+ *  1. The wfrp4e "lifetime" flag is the canonical signal when present.
+ *  2. Numeric duration fields (rounds/turns/seconds <= 1 hour) indicate
+ *     durational effects from spells, conditions, or temporary buffs.
+ *  3. Permanent-keyword pattern in the effect name (e.g. "Permanent
+ *     Damage", "Old Wound") indicates baked-in.
+ *  4. Default to durational - the user's stated preference is to lean
+ *     toward applying effects so they don't get silently dropped.
+ *
+ * Why this matters: permanent effects are already in the actor's base
+ * stats so re-applying them would double-count. Durational effects need
+ * to be applied each iteration onto the cloned combatant.
+ */
 function _isDurational(effect) {
   // Explicit wfrp4e lifetime flag.
   const lifetimeFlag = effect.flags?.wfrp4e?.lifetime;
@@ -115,6 +130,12 @@ function _isDurational(effect) {
   return true;
 }
 
+/**
+ * Detect whether an effect should be applied to the attacker rather than
+ * the carrier. Some wfrp4e effects ("-10 WS to attacker", "Frighten") are
+ * meant to penalize whoever attacks the bearer, not the bearer themselves.
+ * Checks the effect name for "attacker" and the applicationData type flag.
+ */
 function _effectTargetsAttacker(effect) {
   const name = (effect.name ?? "").toLowerCase();
   if (/attacker/.test(name)) return true;
@@ -264,6 +285,13 @@ function _parseNarrativePenalties(text) {
   return results;
 }
 
+/**
+ * Log a warning about an Active Effect path we couldn't handle, but only
+ * once per unique path/key combination per session. Without the dedupe,
+ * a 10,000-iteration sim would flood the console with the same warning
+ * for every iteration that hits the same unhandled effect. The
+ * UNHANDLED_PATHS_LOGGED Set tracks what's been logged already.
+ */
 function _logUnhandled(key, message) {
   if (UNHANDLED_PATHS_LOGGED.has(key)) return;
   UNHANDLED_PATHS_LOGGED.add(key);

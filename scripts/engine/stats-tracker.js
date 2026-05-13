@@ -63,6 +63,13 @@ export class StatsTracker {
     this.loadouts[entryId] = loadout;
   }
 
+  /**
+   * Called by the engine at the end of each iteration. Flushes the per-iter
+   * accumulator into the permanent records on this.perCombatant, records
+   * the iteration's winning side and round count, and resets for the next
+   * iteration. The engine should have invoked recordAttack/Damage/Critical
+   * etc. during the iteration; this is just the final commit.
+   */
   recordIteration(outcome) {
     // The engine has already called recordAttack/Damage/Critical/Miscast during
     // the iteration, populating _currentIterAcc. Just flush it to permanent
@@ -70,18 +77,39 @@ export class StatsTracker {
     this._flushCurrentIteration(outcome);
   }
 
-  // Called by the engine during an iteration:
+  // ---- Called by the engine during an iteration ----
+
+  /**
+   * Record that an attack was thrown (regardless of hit/miss outcome).
+   * Currently does nothing - we don't track raw attack counts - but
+   * exists so the engine can call it without an existence check, and so
+   * future stats (hit rate per combatant) can be added without changing
+   * engine call sites.
+   */
   recordAttack(attacker, defender) {
     this._ensureAcc();
     // Nothing stored per-attack unless we care about attack count later.
   }
 
+  /**
+   * Record that `attacker` dealt `wounds` wounds to `defender` on a hit.
+   * This is the symmetric call - the same wound count increments the
+   * attacker's "inflicted" and the defender's "received" counters in one
+   * shot, so the two are always consistent.
+   */
   recordDamage(attacker, defender, wounds) {
     this._ensureAcc();
     this._bumpAcc(attacker.id, "woundsInflicted", wounds);
     this._bumpAcc(defender.id, "woundsReceived", wounds);
   }
 
+  /**
+   * Record a critical wound. `critRoll` may be a bare number (the d100
+   * roll on the crit table) for legacy compatibility, OR a full crit
+   * object { result, location, name, description, conditions, uuid }
+   * preferred path. The crit object form is what enables probabilistic
+   * Apply to attach the right embedded item later.
+   */
   recordCritical(attacker, defender, critRoll) {
     this._ensureAcc();
     // critRoll can be either a bare number (legacy) or a full crit object.
@@ -97,15 +125,24 @@ export class StatsTracker {
     this._pushAcc(defender.id, "critDetailsReceived", critObj);
   }
 
+  /** Record a miscast event by a caster (any severity). */
   recordMiscast(caster) {
     this._ensureAcc();
     this._bumpAcc(caster.id, "miscasts", 1);
   }
 
+  // ---- Internal: per-iteration accumulator ----
+
+  /** Lazy-init the per-iteration accumulator. Called by every recordXxx. */
   _ensureAcc() {
     if (!this._currentIterAcc) this._startIterAccumulator();
   }
 
+  /**
+   * Initialize a fresh accumulator object with zero counters for every
+   * tracked combatant. Called at the start of each iteration via
+   * _ensureAcc when the first event fires.
+   */
   _startIterAccumulator() {
     this._currentIterAcc = {};
     for (const id of Object.keys(this.perCombatant)) {
@@ -123,16 +160,25 @@ export class StatsTracker {
     return this._currentIterAcc;
   }
 
+  /** Add to a numeric counter in the current iteration's accumulator. */
   _bumpAcc(id, key, amount) {
     if (!this._currentIterAcc || !this._currentIterAcc[id]) return;
     this._currentIterAcc[id][key] += amount;
   }
 
+  /** Append to an array counter in the current iteration's accumulator. */
   _pushAcc(id, key, value) {
     if (!this._currentIterAcc || !this._currentIterAcc[id]) return;
     this._currentIterAcc[id][key].push(value);
   }
 
+  /**
+   * Move the iteration's accumulator into the permanent per-combatant
+   * records: one summed sample per metric per iteration. Also records the
+   * iteration's winning side (or draw), round count, zero-crit flags for
+   * probabilistic Apply, and per-combatant death flags. Clears the
+   * accumulator so the next iteration starts fresh.
+   */
   _flushCurrentIteration(outcome) {
     const acc = this._currentIterAcc ?? this._startIterAccumulator();
 
@@ -167,6 +213,26 @@ export class StatsTracker {
     this._currentIterAcc = null;
   }
 
+  /**
+   * Build the final aggregate report after all iterations are complete.
+   * This is the public output of the tracker - everything downstream
+   * (results UI, narrative generator, Apply) reads this shape:
+   *
+   * {
+   *   iterations:    total iteration count,
+   *   perCombatant:  { entryId -> per-combatant rollup with distStats fields },
+   *   sides:         { sideId -> { id, name, wins, winRate } },
+   *   draws:         iterations with no winner,
+   *   drawRate:      draws / iterations,
+   *   avgRounds:     mean combat length,
+   *   predictedWinner: { id, name, winRate } of the highest-win-rate side, or null
+   * }
+   *
+   * Each per-combatant entry carries distStats (mean/min/max/median/stddev)
+   * for wounds and crits, raw wound samples for probabilistic Apply, a
+   * loadout descriptor for the narrative generator, and a deathRate
+   * (fraction of iterations in which they died).
+   */
   summarize(totalIterations) {
     const perCombatant = {};
     for (const [id, rec] of Object.entries(this.perCombatant)) {
@@ -231,11 +297,13 @@ export class StatsTracker {
   }
 }
 
+/** Arithmetic mean of an array of numbers. Returns 0 for empty arrays. */
 function mean(arr) {
   if (!arr.length) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+/** Median of an array of numbers. Returns 0 for empty arrays. */
 function median(arr) {
   if (!arr.length) return 0;
   const s = [...arr].sort((a, b) => a - b);
@@ -243,6 +311,11 @@ function median(arr) {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+/**
+ * Sample standard deviation (n-1 denominator). Returns 0 for arrays with
+ * fewer than 2 samples. Used over population stddev because each iteration
+ * is a sample from the underlying distribution.
+ */
 function stddev(arr) {
   if (arr.length < 2) return 0;
   const m = mean(arr);
@@ -250,6 +323,12 @@ function stddev(arr) {
   return Math.sqrt(v);
 }
 
+/**
+ * Build the distribution summary for an array of per-iteration samples.
+ * Returns { mean, min, max, median, stddev, samples } - the canonical
+ * shape every downstream consumer expects. Returns zero-filled stats for
+ * empty input rather than NaN/null, simplifying display code.
+ */
 function distStats(arr) {
   if (!arr.length) return { mean: 0, min: 0, max: 0, median: 0, stddev: 0, samples: 0 };
   return {

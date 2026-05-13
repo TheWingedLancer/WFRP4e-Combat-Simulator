@@ -51,16 +51,34 @@ export class Combatant {
   /*  Queries                           */
   /* ---------------------------------- */
 
+  /**
+   * Get the current value of a characteristic by abbreviation (ws, bs, s,
+   * t, i, ag, dex, int, wp, fel). Returns base + modifier; effect-applier
+   * mutates the modifier field at sim time so that durational status
+   * effects (e.g. -10 WS until healed) are reflected here automatically.
+   * Returns 0 for unknown characteristics rather than throwing.
+   */
   characteristic(abbrev) {
     const c = this.system?.characteristics?.[abbrev];
     if (!c) return 0;
     return (c.value ?? 0) + (c.modifier ?? 0);
   }
 
+  /**
+   * Characteristic bonus (the tens digit). Per WFRP4e, every characteristic
+   * has an associated bonus equal to floor(value / 10); these are used as
+   * direct modifiers in many places (SB on damage, TB on soak, etc.).
+   */
   bonus(abbrev) {
     return Math.floor(this.characteristic(abbrev) / 10);
   }
 
+  /**
+   * Look up a skill by exact name and return its calculated total.
+   * Returns { name, characteristic, advances, total } or null if not found.
+   * 'total' is the characteristic value + advances - the number to roll
+   * under on a d100 test.
+   */
   getSkill(name) {
     const skill = this.items.find(i => i.type === "skill" && i.name === name);
     if (!skill) return null;
@@ -74,6 +92,17 @@ export class Combatant {
     };
   }
 
+  /**
+   * Find the right skill to test for an attack with the given weapon.
+   * Tries the system's weapon-group → skill mapping first (e.g. weapon
+   * group "basic" maps to skill "Basic", so the skill checked is
+   * "Melee (Basic)"). Falls back to raw WS/BS characteristic when no
+   * skill is found on the actor - matches what the WFRP4e system itself
+   * does for unskilled attacks.
+   *
+   * Returns: { total, characteristic, advances, name } - same shape as
+   * getSkill so callers can use both interchangeably.
+   */
   weaponSkillFor(weapon) {
     const groupKey = weapon.system?.weaponGroup?.value;
     // System-defined skill name mapping if available.
@@ -87,6 +116,13 @@ export class Combatant {
     return { total: this.characteristic(isRanged ? "bs" : "ws"), characteristic: isRanged ? "bs" : "ws", advances: 0, name: "" };
   }
 
+  /**
+   * Return weapons available for the combatant to use this fight.
+   * For characters/NPCs, only equipped weapons count - matches sheet
+   * behavior where unequipped weapons don't show up in attack rolls.
+   * Creatures and vehicles bypass the equipped filter (their "weapons"
+   * are body parts or built-in fittings, always available).
+   */
   getWeapons() {
     const weapons = this.items.filter(i => i.type === "weapon");
     // For creatures, weapons are typically always "available" - no equipped flag semantics.
@@ -98,18 +134,28 @@ export class Combatant {
     });
   }
 
+  /** Return all spell items on the actor (memorized + known). */
   getSpells() {
     return this.items.filter(i => i.type === "spell");
   }
 
+  /** Case-insensitive talent presence check. */
   hasTalent(name) {
     return this.items.some(i => i.type === "talent" && i.name.toLowerCase() === name.toLowerCase());
   }
 
+  /** Case-insensitive trait presence check. */
   hasTrait(name) {
     return this.items.some(i => i.type === "trait" && i.name.toLowerCase() === name.toLowerCase());
   }
 
+  /**
+   * Compute Armour Points at a specific hit location ("head", "body",
+   * "lArm", "rArm", "lLeg", "rLeg"). Walks all worn armour pieces and
+   * sums their AP values for the location. Also adds the Armour trait's
+   * value (which applies everywhere) when present - so creatures with
+   * Armour (3) get +3 AP at every location.
+   */
   getArmourAt(location = "body") {
     let ap = 0;
     for (const item of this.items) {
@@ -129,20 +175,30 @@ export class Combatant {
     return ap;
   }
 
+  /** Current Wounds for this iteration. Independent of the real actor sheet. */
   currentWounds() { return this.state.currentWounds; }
 
+  /**
+   * Combatant is alive AND conscious AND has at least 1 Wound left.
+   * The AI uses this to decide whether a combatant can still take actions;
+   * the engine uses it for victory checks.
+   */
   isActive() {
     return !this.state.dead && !this.state.unconscious && this.state.currentWounds > 0;
   }
 
   isDead() { return this.state.dead; }
-
   hasFate() { return this.state.fate > 0; }
 
   /* ---------------------------------- */
   /*  Mutations                         */
   /* ---------------------------------- */
 
+  /**
+   * Apply wound damage. Drops the combatant unconscious when Wounds reach 0
+   * and outright kills them when Wounds drop below -TB (matches WFRP4e p.163
+   * "Wounds Beyond Zero"). Non-positive amounts are silently ignored.
+   */
   takeWounds(amount) {
     const n = Number(amount);
     if (!Number.isFinite(n) || n <= 0) return;
@@ -158,6 +214,13 @@ export class Combatant {
     }
   }
 
+  /**
+   * Apply a critical wound. Records it in the running list and kills the
+   * combatant outright when their total criticals exceed their TB (WFRP4e
+   * p.164: "Mortal Wound"). Fate-burn to survive is handled by the engine,
+   * not here - this just sets the dead flag, and the engine spends Fate to
+   * undo it when appropriate.
+   */
   addCriticalWound(crit) {
     this.state.criticalWounds.push(crit);
     // Each crit beyond TB causes death (WFRP4e p.164).
@@ -176,25 +239,37 @@ export class Combatant {
   spendResolve() { if (this.state.resolve > 0) this.state.resolve--; }
   spendResilience() { if (this.state.resilience > 0) this.state.resilience--; }
 
+  /**
+   * Restore the combatant to an active state with the given wounds.
+   * Used when burning Fate to survive a killing blow - the engine spends
+   * the Fate point and calls revive(1) to bring them back at 1 Wound,
+   * matching the WFRP4e rule.
+   */
   revive(wounds = 1) {
     this.state.dead = false;
     this.state.unconscious = false;
     this.state.currentWounds = Math.max(wounds, 1);
   }
 
+  /** Adjust Advantage by n (positive or negative), clamped to [0, 10]. */
   addAdvantage(n = 1) {
     this.state.advantage = Math.min(10, Math.max(0, this.state.advantage + n));
   }
 
   setAdvantage(n) { this.state.advantage = Math.max(0, n); }
-
   setDefending(v) { this.state.defending = v; }
   setDodging(v) { this.state.dodging = v; }
 
+  /**
+   * Add stacks of a named condition (e.g. addCondition("stunned", 2)).
+   * Condition keys are lowercase strings matching wfrp4e's condition names.
+   * The ConditionManager ticks these down at appropriate moments.
+   */
   addCondition(name, stacks = 1) {
     this.state.conditions[name] = (this.state.conditions[name] ?? 0) + stacks;
   }
 
+  /** Remove stacks; deletes the condition entirely when count hits 0. */
   removeCondition(name, stacks = 1) {
     if (!this.state.conditions[name]) return;
     this.state.conditions[name] -= stacks;
@@ -204,9 +279,21 @@ export class Combatant {
   hasCondition(name) { return (this.state.conditions[name] ?? 0) > 0; }
   conditionStacks(name) { return this.state.conditions[name] ?? 0; }
 
+  /**
+   * Set/get the current range band between this combatant and another.
+   * Bands are "engaged", "short", "medium", "long", "extreme". Note:
+   * range storage is one-directional - setRangeTo(B, "engaged") on A does
+   * NOT auto-update B's view of A. The outnumbering helper in rules.js
+   * works around this by checking both directions symmetrically.
+   */
   setRangeTo(target, range) { this.state.rangeTo[target.id] = range; }
   rangeTo(target) { return this.state.rangeTo[target.id] ?? this.state.startingRange; }
 
+  /**
+   * Snapshot the combatant's current state for end-of-iteration reporting.
+   * Captures everything the stats tracker needs to know about how this
+   * combatant fared in this run.
+   */
   snapshotStats() {
     return {
       id: this.id,

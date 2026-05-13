@@ -52,6 +52,14 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   };
 
+  /**
+   * Build the template context. Aggregates per-combatant stats into sides,
+   * formats numeric distributions for display (mean/min/max/median/stddev),
+   * computes side win-rate percentages, and assembles the narrative
+   * section (clinical summary inline; flavor paragraph is async, fetched
+   * in _onRender). The Apply button visibility is gated on canApply -
+   * GM-only, engine present, and not already applied.
+   */
   async _prepareContext(options) {
     const r = this.results;
     const sidesWithCombatants = {};
@@ -124,6 +132,13 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  /**
+   * Fetch the AI flavor paragraph from the Anthropic API and cache it on
+   * this instance. Sets the loading flag while the request is in flight,
+   * updates flavor or error state from the result, and always repaints
+   * the DOM at the end. Called once on first render (from _onRender) and
+   * again on regenerate clicks.
+   */
   async _loadNarrativeFlavor() {
     this._narrativeLoading = true;
     try {
@@ -178,6 +193,12 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     container.innerHTML = "";
   }
 
+  /**
+   * Convert an error code from _loadNarrativeFlavor into a human-readable
+   * message for the user. Recognizes the canonical error codes used by
+   * NarrativeGenerator.generateFlavor (no-api-key, network, empty-response,
+   * api-NNN for HTTP status codes), with a fallback for anything else.
+   */
   _describeFlavorError(code) {
     switch (code) {
       case "no-api-key": return "No Anthropic API key configured. Set one in the module settings to enable flavor text.";
@@ -192,6 +213,11 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  /**
+   * Regenerate the AI flavor paragraph. Clears the cached flavor + error
+   * state, repaints the loading spinner, then triggers a fresh API call.
+   * Action handler for the regenerate button in the template.
+   */
   static async #onRegenerateNarrative(event, target) {
     // Force a fresh API call.
     this._narrativeFlavor = null;
@@ -200,6 +226,11 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     await this._loadNarrativeFlavor();
   }
 
+  /**
+   * Export the full results object as JSON. Builds a downloadable blob
+   * with a timestamped filename. Useful for archiving results across
+   * Foundry sessions or comparing runs externally.
+   */
   static async #onExportJson(event, target) {
     const data = JSON.stringify(this.results, null, 2);
     const blob = new Blob([data], { type: "application/json" });
@@ -211,6 +242,17 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Apply simulation results back to the real actor sheets. Builds a fresh
+   * preview (which performs both wound and crit probabilistic rolls per
+   * entry), shows the confirmation dialog with distribution bars, and on
+   * confirm calls the engine to commit the writes. The preview produced
+   * here is passed into the engine so the user sees the exact roll that
+   * will be applied. Re-clicking Apply after Cancel intentionally re-rolls.
+   *
+   * Disables the button + sets applied=true on success so a single sim
+   * can't be applied twice (would double-stack damage).
+   */
   static async #onApplyToActors(event, target) {
     if (this.applied || !this.engine) return;
 
@@ -245,6 +287,7 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
+  /** Close the results window. */
   static #onClose() { this.close(); }
 
   /**
@@ -426,6 +469,11 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
       <div class="sim-dist-rolled-summary">${rolledSummary}</div>`;
   }
 
+  /**
+   * @deprecated Replaced by _confirmApplyWithPreview in v0.1.11. Kept for
+   * any external callers that might still reference it; the modern path
+   * (with full distribution bars) is the only one wired into the UI.
+   */
   static _confirmApply() {
     // Kept for backwards compatibility / simple path.
     return new Promise((resolve) => {
@@ -453,6 +501,12 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 }
 
+/**
+ * Format a distStats object into display-ready strings. Mean/median use
+ * decimals (some non-integer outputs make sense at the rollup level);
+ * min/max are integers. Returns zero-filled strings for missing data so
+ * the template never breaks on null fields.
+ */
 function fmtDist(d) {
   if (!d) return { mean: "0", min: "0", max: "0", median: "0", stddev: "0" };
   return {
@@ -464,6 +518,12 @@ function fmtDist(d) {
   };
 }
 
+/**
+ * Format a crit-received entry for the results template: looks up
+ * localized labels for location and severity, joins conditions with
+ * stacks counts, and returns a flat object the template can render
+ * directly. Falls back to raw key strings when localizations are missing.
+ */
 function fmtCrit(c) {
   const locKey = `WFRP4E_SIM.Location.${c.location}`;
   const sevKey = `WFRP4E_SIM.Severity.${c.severity}`;

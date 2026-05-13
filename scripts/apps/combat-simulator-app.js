@@ -63,6 +63,13 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
   /*  Context                                  */
   /* ----------------------------------------- */
 
+  /**
+   * Build the template context for the setup window. Carries the sides
+   * array with each combatant resolved against game.actors (so we can
+   * show name/image/WS/wounds preview), the current run config, the lists
+   * of localization keys for victory-condition and starting-range drop-
+   * downs, and a canRun flag that gates the Run button.
+   */
   async _prepareContext(options) {
     return {
       sides: this.sides.map(s => ({
@@ -87,6 +94,12 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     };
   }
 
+  /**
+   * Resolve an entry's actorId against the game's actor list and produce
+   * the display fields the setup card needs. Returns a `missing: true`
+   * stub when the actor was deleted between drop and render so the UI
+   * doesn't break.
+   */
   _combatantContext(entry) {
     const actor = game.actors.get(entry.actorId);
     if (!actor) {
@@ -110,6 +123,13 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
   /*  Rendering & Drag-Drop                    */
   /* ----------------------------------------- */
 
+  /**
+   * Post-render hook. Wires up drag/drop on side dropzones, change
+   * listeners on config inputs and side-name fields, and kicks off
+   * background crit-table warming on the very first render. Warming is
+   * fire-and-forget; if the user hits Run before it finishes, the sim
+   * falls back to the slow async crit-resolution path.
+   */
   _onRender(context, options) {
     super._onRender?.(context, options);
     const root = this.element;
@@ -142,15 +162,24 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     });
   }
 
+  /** Allow drop on side dropzones (preventDefault enables the drop event). */
   _onDragOver(event) {
     event.preventDefault();
     event.currentTarget.classList.add("drop-active");
   }
 
+  /** Remove the visual drag highlight when the drag exits. */
   _onDragLeave(event) {
     event.currentTarget.classList.remove("drop-active");
   }
 
+  /**
+   * Accept an actor drop onto a side. Reads the Foundry drag payload,
+   * resolves the actor by id or UUID, and appends a new combatant entry
+   * to the targeted side. Silently no-ops on malformed payloads (drags
+   * from external sources) so the UI doesn't show errors for non-actor
+   * drops.
+   */
   async _onDrop(event) {
     event.preventDefault();
     const zone = event.currentTarget;
@@ -183,6 +212,12 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render();
   }
 
+  /**
+   * Generic [data-config] input change handler. Reads the data-config key,
+   * converts the value to the right type based on the input type
+   * (number/checkbox/text), and writes into this.config. Does NOT re-render -
+   * config inputs control sim settings only, not the displayed combatants.
+   */
   _onConfigChange(event) {
     const key = event.currentTarget.dataset.config;
     let value = event.currentTarget.value;
@@ -191,6 +226,7 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     this.config[key] = value;
   }
 
+  /** Update a side's display name in place from the editable name input. */
   _onSideNameChange(event) {
     const sideId = event.currentTarget.dataset.sideName;
     const side = this.sides.find(s => s.id === sideId);
@@ -201,6 +237,7 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
   /*  Actions                                  */
   /* ----------------------------------------- */
 
+  /** Add a new empty side. Names cycle A, B, C, ... up to H. */
   static #onAddSide(event, target) {
     const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
     const idx = this.sides.length;
@@ -212,6 +249,7 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render();
   }
 
+  /** Remove a side. Enforces a minimum of 2 sides per WFRP4e combat. */
   static #onRemoveSide(event, target) {
     if (this.sides.length <= 2) {
       ui.notifications.warn(game.i18n.localize("WFRP4E_SIM.Warn.MinimumSides"));
@@ -222,6 +260,7 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render();
   }
 
+  /** Remove a single combatant entry from its side without affecting others. */
   static #onRemoveCombatant(event, target) {
     const sideId = target.dataset.sideId;
     const combatantId = target.dataset.combatantId;
@@ -231,6 +270,7 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render();
   }
 
+  /** Pop open the underlying actor sheet for convenience. */
   static #onOpenActor(event, target) {
     event.stopPropagation();
     const actorId = target.dataset.actorId;
@@ -238,6 +278,14 @@ export class CombatSimulatorApp extends HandlebarsApplicationMixin(ApplicationV2
     actor?.sheet?.render(true);
   }
 
+  /**
+   * Kick off the simulation. Filters out empty sides, requires at least 2
+   * non-empty sides, disables the Run button while running, and on
+   * completion opens ResultsApp with the engine reference (so Apply can
+   * call back into engine methods for the probabilistic-roll preview).
+   * Surfaces errors as Foundry notifications; the engine never crashes
+   * the world.
+   */
   static async #onRunSimulation(event, target) {
     event.preventDefault();
 

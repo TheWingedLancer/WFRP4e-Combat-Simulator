@@ -142,6 +142,18 @@ export class SimulationEngine {
     return results;
   }
 
+  /**
+   * Run a single combat iteration to completion. Creates fresh Combatant
+   * instances from the configured sides (so each iteration is fully
+   * independent - no state leaks between runs), loops up to maxRounds
+   * resolving initiative-ordered turns, ticks conditions at the start
+   * and end of each turn, and checks the victory condition after every
+   * round. Returns an outcome summary the stats tracker uses to flush
+   * the iteration into permanent records.
+   *
+   * If maxRounds elapses without a clear winner, _resolveTimeoutWinner
+   * picks one based on remaining wounds.
+   */
   async _runOneCombat(iterationIndex) {
     // Clone combatants.
     const combatants = [];
@@ -214,6 +226,14 @@ export class SimulationEngine {
     };
   }
 
+  /**
+   * Roll initiative for all active combatants and return them in turn order.
+   * Initiative test: d10 + Initiative characteristic + Ag bonus. Higher
+   * goes first; ties resolve in array order. WFRP4e uses a more involved
+   * initiative-vs-Cool opposed test for the first round; we simplify to
+   * a flat roll because the variance is similar and the loop runs every
+   * iteration.
+   */
   _rollInitiativeOrder(combatants) {
     return [...combatants]
       .filter(c => c.isActive())
@@ -227,6 +247,14 @@ export class SimulationEngine {
       .map(x => x.c);
   }
 
+  /**
+   * Dispatch an action from the AI to the right resolver. Action types:
+   * "melee" / "ranged" -> _resolveAttack with an opposed test
+   * "cast"             -> _resolveSpell with a casting roll + miscast check
+   * "move"             -> change the actor's range band toward the target
+   * "defend"           -> set the defending flag (used in opposed tests)
+   * "dodge"            -> set the dodging flag (used in opposed tests)
+   */
   async _executeAction(actor, action, allCombatants) {
     switch (action.type) {
       case "melee":
@@ -253,6 +281,14 @@ export class SimulationEngine {
     }
   }
 
+  /**
+   * Resolve a melee or ranged attack. Calls the opposed test (which now
+   * factors in outnumbering bonuses for melee), and on a successful hit
+   * with damageDealt>0 computes wounds, applies them, rolls a hit
+   * location, and resolves any critical wound from the damage. Records
+   * the full event chain to the stats tracker so the results can show
+   * per-combatant hit/wound/crit distributions.
+   */
   async _resolveAttack(attacker, action, allCombatants) {
     const target = action.target;
     const weapon = action.weapon;
@@ -328,6 +364,15 @@ export class SimulationEngine {
     }
   }
 
+  /**
+   * Resolve a spell-casting action. Rolls d100 against (WP + Language(Magick)
+   * advances * 5) to compute SL, and requires SL >= CN to successfully cast.
+   * On failure, doubles on the d100 trigger a miscast record. On success
+   * with a damage value, the spell applies wounds (floored at 1, same as
+   * weapon damage) - hit location is body for spells; AP and TB are
+   * subtracted. Successful casters gain an Advantage point regardless of
+   * whether the spell had damage.
+   */
   async _resolveSpell(caster, action, allCombatants) {
     const spell = action.spell;
     const target = action.target;
@@ -367,6 +412,18 @@ export class SimulationEngine {
     caster.addAdvantage(1);
   }
 
+  /**
+   * Compute Success Levels for a single test. SL is the difference in tens
+   * digits between target and roll, with two special cases:
+   *  - Roll of 1 is an auto-success: SL = floor(target / 10)
+   *  - Roll of 96+ is an auto-fumble: SL = -(target tens) - 1
+   * Returns may be positive (success) or negative (failure).
+   *
+   * Mirrors the simpler version in rules.js (which uses Math.max(0, ...)
+   * floor on the success path); the difference is intentional - this
+   * version is used for spell casting where high-SL successes matter for
+   * exceeding the CN.
+   */
   _calcSL(roll, target) {
     const rollTens = Math.floor(roll / 10);
     const targetTens = Math.floor(target / 10);
@@ -375,12 +432,29 @@ export class SimulationEngine {
     return targetTens - rollTens;
   }
 
+  /**
+   * Detect a d100 double - i.e. tens and ones digit match. Used as the
+   * miscast trigger for spell casting (per WFRP4e p.238). Treats 100 as
+   * a double (00 + 00 on percentile dice).
+   */
   _isDouble(n) {
     if (n < 10) return n === 0;
     const s = String(n);
     return s[0] === s[1] || (s.length === 3 && s === "100");
   }
 
+  /**
+   * Evaluate the current victory condition against the combatant state.
+   * Returns a side id (the winner), the string "draw", or null if the
+   * fight should continue.
+   *
+   * Victory conditions:
+   *  - lastStanding / incapacitation: exactly one side has active members.
+   *  - rout: any side reduced below 50% active triggers a rout, the
+   *    remaining sole-active side wins.
+   *  - fixedRounds: when maxRounds is reached, _resolveTimeoutWinner
+   *    breaks the tie by wound totals.
+   */
   _checkVictory(combatants, roundsElapsed) {
     const sides = {};
     for (const c of combatants) {
@@ -416,6 +490,13 @@ export class SimulationEngine {
     return null;
   }
 
+  /**
+   * Break ties when the fight times out at maxRounds. Each side's
+   * aggregate remaining Wounds across active members determines the
+   * winner; ties return "draw". Used by both the fixedRounds victory
+   * condition and as a fallback when the main loop exits without a
+   * winner.
+   */
   _resolveTimeoutWinner(combatants) {
     // Highest aggregate remaining wounds wins.
     const totals = {};

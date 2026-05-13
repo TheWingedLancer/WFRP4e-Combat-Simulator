@@ -82,15 +82,29 @@ function evalDamageExpr(expr, sb) {
   return null;
 }
 
+/** Roll a d100 (1-100). */
 export function d100() { return Math.floor(Math.random() * 100) + 1; }
+
+/** Roll a d10 (1-10). */
 export function d10() { return Math.floor(Math.random() * 10) + 1; }
 
+/**
+ * Compute Success Levels from a roll and target. SL is the difference in
+ * tens digits between target and roll. Special cases:
+ *  - Natural 1: auto-success at SL = floor(target / 10), or 0 minimum.
+ *  - Natural 96-100: auto-fumble at SL = -(target tens + 1), at least -1.
+ * Positive SL = success margin; negative = failure margin.
+ */
 export function calcSL(roll, target) {
   if (roll === 1) return Math.max(0, Math.floor(target / 10)); // auto success
   if (roll >= 96) return -Math.max(1, Math.floor(target / 10) + 1); // auto fumble
   return Math.floor(target / 10) - Math.floor(roll / 10);
 }
 
+/**
+ * Detect a d100 double (tens and ones digit match). Used to trigger crits
+ * on hits and miscasts on failed spells. 100 (00/00) is treated as a double.
+ */
 export function isDouble(n) {
   if (n === 100) return true; // 00 on both dice treated as double
   if (n < 11) return false;
@@ -99,6 +113,11 @@ export function isDouble(n) {
   return tens === ones;
 }
 
+/**
+ * Swap the tens and units digits of a d100. Used for hit-location rolls:
+ * WFRP4e doesn't roll a separate location die - it reverses the attack
+ * roll. So if you rolled 27 to hit, the hit location is determined by 72.
+ */
 export function reverseRoll(n) {
   // For hit location: reverse the tens and units of the attack roll.
   const tens = Math.floor(n / 10);
@@ -108,6 +127,12 @@ export function reverseRoll(n) {
   return loc;
 }
 
+/**
+ * Pick the hit location from an attack roll using the WFRP4e hit-location
+ * table (head 1-9, RArm 10-24, LArm 25-44, body 45-79, RLeg 80-89, LLeg
+ * 90-100, reversed). Returns one of "head", "rArm", "lArm", "body",
+ * "rLeg", "lLeg".
+ */
 export function rollHitLocation(attackRoll) {
   const reversed = reverseRoll(attackRoll);
   for (const band of HIT_LOCATION_TABLE) {
@@ -200,6 +225,20 @@ export function resolveOpposedTest({ attacker, defender, weapon, actionType, all
   };
 }
 
+/**
+ * Compute the to-hit modifier for the attacker. Sums:
+ *  - Defender condition bonuses: +20 for prone (melee only), stunned,
+ *    entangled, or surprised.
+ *  - Attacker condition penalties: -20 prone, -40 blinded, -10/stack
+ *    fatigued.
+ *  - Range band penalty for ranged attacks: point +20, short +10, medium 0,
+ *    long -10, extreme -30, engaged -20 (firing into melee).
+ *  - Outnumbering bonus (melee only, requires allCombatants): +20 at 2:1,
+ *    +40 at 3:1 - see computeOutnumberingBonus for details.
+ *
+ * Does NOT include the attacker's own skill or Advantage - those are
+ * added by resolveOpposedTest at the call site.
+ */
 function attackerModifier(attacker, defender, weapon, actionType, allCombatants) {
   let mod = 0;
 
@@ -283,6 +322,13 @@ function computeOutnumberingBonus(attacker, defender, allCombatants) {
   return 0;
 }
 
+/**
+ * Pick the defender's defensive action: "parry", "dodge", or "none".
+ * Explicit flags win first ("dodging" on the defender state forces dodge,
+ * "defending" forces parry). Otherwise picks whichever skill is higher -
+ * the weapon-skill total (parry) vs Dodge total. Inactive combatants
+ * can't defend.
+ */
 function chooseDefense(defender, attacker) {
   if (!defender.isActive()) return "none";
   if (defender.state.dodging) return "dodge";
@@ -352,6 +398,18 @@ export function resolveDamage({ attacker, defender, weapon, sl, hitLocation }) {
   };
 }
 
+/**
+ * Parse a weapon's qualities and flaws into a flag bag for easy lookup.
+ * Returns an object with boolean fields for each relevant quality:
+ *  - impact: doubles a die for damage on doubles
+ *  - impale: triggers crit on doubles when SL >= 0
+ *  - damaging: replaces ones digit of damage roll with the higher value
+ *  - hack: location-specific crit modifier
+ *  - fast: -10 to opponent's defense
+ *  - slow: +10 to opponent's defense (this is a Flaw, not a Quality)
+ *  - usesSB: true unless the weapon is a ranged weapon group that
+ *    doesn't add Strength Bonus to damage (bows, crossbows, blackpowder)
+ */
 function weaponQualities(weapon) {
   const qualities = weapon.system?.qualities?.value ?? [];
   const flaws = weapon.system?.flaws?.value ?? [];
@@ -522,6 +580,16 @@ function findCritTable(key) {
   return null;
 }
 
+/**
+ * Fetch and cache a crit-table item by UUID. The wfrp4e system stores
+ * critical wounds as world Items with description, wounds, and condition
+ * data. This async lookup is slow (uses fromUuid which may hit the world
+ * database) so results are cached in a module-level Map keyed by UUID.
+ * Failures cache null so we don't retry on every iteration.
+ *
+ * Returns { name, description, extraWounds, conditions, item } or null
+ * when the item can't be resolved.
+ */
 async function resolveCritItem(uuid) {
   if (!uuid) return null;
   if (CRIT_ITEM_CACHE.has(uuid)) return CRIT_ITEM_CACHE.get(uuid);
@@ -582,6 +650,22 @@ export async function rollCriticalWound(hitLocation) {
   return await rollCriticalWoundViaSystem(hitLocation, tableKey, roll);
 }
 
+/**
+ * Async fallback path for resolving a crit when the synchronous warm-cache
+ * lookup didn't have the table. Calls the wfrp4e system's rollTable API
+ * to draw a real result from the RollTable, then resolves any embedded
+ * UUID reference via resolveCritItem for the description and conditions.
+ *
+ * Slower than the cached path because rollTable involves database I/O
+ * and the UUID resolution chains another async fetch. The sim engine
+ * warms the cache on UI open to avoid this path in normal operation;
+ * this only fires when a never-seen-before crit table is hit during a
+ * sim that wasn't pre-warmed.
+ *
+ * Returns the same shape as the warm-cache resolveCritical: { result,
+ * location, tableKey, name, description, extraWounds, conditions, uuid,
+ * severity }.
+ */
 async function rollCriticalWoundViaSystem(hitLocation, tableKey, fallbackRoll) {
   let roll = fallbackRoll;
   let name = "";
@@ -670,11 +754,23 @@ function extractConditionsFromItem(item, description) {
   return found;
 }
 
+/**
+ * Strip HTML tags from a string and collapse whitespace. Used to clean
+ * crit-item descriptions stored as Foundry rich text before showing them
+ * in the results UI or passing to the narrative generator.
+ */
 function stripHTML(str) {
   if (!str) return "";
   return String(str).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Parse condition mentions out of crit description text by pattern matching.
+ * Used as a fallback when a crit Item doesn't expose its conditions as
+ * Active Effects - we look in the description prose for phrases like
+ * "Bleeding 2" or "Stunned" and extract them with stacks counts.
+ * Returns an array of { key, stacks } condition descriptors.
+ */
 function extractConditionsFromText(text) {
   if (!text) return [];
   const found = [];

@@ -10,6 +10,31 @@
  */
 
 export class CombatantAI {
+  /**
+   * Pick what action this combatant should take this turn. Returns an action
+   * descriptor object the engine can act on, or null when there are no
+   * enemies to act against.
+   *
+   * Decision order (each step short-circuits if it returns):
+   *  1. Cast a damage spell, if the combatant has one and WP >= 35
+   *     (35 minimum because lower WP makes most damage spells unreliable
+   *     and the AI is better off swinging).
+   *  2. Melee attack, if engaged and a melee weapon is equipped. Sets
+   *     `defending: true` on the action when current wounds <= 25% of max,
+   *     so the engine knows this combatant is fighting cautiously.
+   *  3. Ranged attack, if NOT engaged and a ranged weapon is equipped.
+   *  4. Move one range band closer, if NOT engaged but melee weapons are
+   *     equipped (combatant is closing to engage).
+   *  5. Unarmed fallback: use a weapon-trait pseudo-weapon if present,
+   *     else just defend this turn.
+   *  6. Last resort: attack with whatever weapon is in hand, melee if
+   *     engaged otherwise ranged.
+   *
+   * @param self           the acting combatant
+   * @param enemies        all currently active enemies
+   * @param allCombatants  full combatant list (unused here, passed for symmetry)
+   * @returns action descriptor: { type, weapon?, spell?, target?, newRange?, defending? }
+   */
   chooseAction(self, enemies, allCombatants) {
     if (!enemies.length) return null;
 
@@ -79,6 +104,11 @@ export class CombatantAI {
     return { type: engaged ? "melee" : "ranged", weapon: fallbackWeapon, target };
   }
 
+  /**
+   * Pick a target from the enemy list. Heuristic: focus the most wounded
+   * enemy first (finish them off), break ties by highest WS (drop the most
+   * dangerous fighter when health is equal).
+   */
   _chooseTarget(self, enemies) {
     // Prefer lowest current wounds (easy kill), break ties by highest advantage threat.
     return [...enemies].sort((a, b) => {
@@ -87,6 +117,12 @@ export class CombatantAI {
     })[0];
   }
 
+  /**
+   * Sort weapons by computed damage and return the highest-damage one.
+   * Damage parsing handles all the wfrp4e formats: numeric values, "SB",
+   * "SB+4", "4+SB", and string-encoded numbers. Strength Bonus is folded
+   * in once here so weapons are comparable on equal footing.
+   */
   _bestWeapon(self, weapons) {
     const sb = self.bonus("s");
     const damageOf = (w) => {
@@ -110,12 +146,17 @@ export class CombatantAI {
     return [...weapons].sort((a, b) => damageOf(b) - damageOf(a))[0];
   }
 
+  /** Return the highest-damage damaging spell, or null if none. */
   _bestDamageSpell(spells) {
     return [...spells]
       .filter(s => (s.system?.damage?.value ?? 0) > 0)
       .sort((a, b) => (b.system?.damage?.value ?? 0) - (a.system?.damage?.value ?? 0))[0] ?? null;
   }
 
+  /**
+   * Classify a weapon as melee or ranged by its weaponGroup. The list of
+   * ranged groups matches what the WFRP4e system itself uses internally.
+   */
   _isMelee(weapon) {
     const group = weapon.system?.weaponGroup?.value;
     const rangedGroups = ["bow", "crossbow", "blackpowder", "engineering", "sling", "throwing", "entangling"];
@@ -126,6 +167,11 @@ export class CombatantAI {
     return !this._isMelee(weapon);
   }
 
+  /**
+   * Walk one step closer in the range progression. Used when a combatant
+   * wants to close to melee. WFRP4e bands shrink toward "engaged" as you
+   * approach: extreme -> long -> medium -> short -> engaged.
+   */
   _closeOneStep(range) {
     const order = ["extreme", "long", "medium", "short", "engaged"];
     const idx = order.indexOf(range);

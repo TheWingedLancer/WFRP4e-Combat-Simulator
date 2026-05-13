@@ -298,6 +298,19 @@ export class NarrativeGenerator {
     }
   }
 
+  /**
+   * Build the system prompt for the Anthropic API call. This is the
+   * constant role/instruction text Claude uses regardless of the specific
+   * sim. Key constraints baked in:
+   *  - Output: a single 2-4 sentence paragraph in evocative GM voice.
+   *  - Grounding: only reference combatants, sides, and numbers from the
+   *    briefing (no inventing).
+   *  - Combat-mode fidelity (v0.1.17): match the briefing's combatMode
+   *    field - ranged fights get arrows, magical fights get spells, etc.
+   *    Specific imagery hints per weapon group are listed inline.
+   *  - Style: no em-dashes, no filler openings, gritty Old World tone.
+   *  - Output format: ONLY the paragraph, no preface or postscript.
+   */
   _buildSystemPrompt() {
     return (
       "You are a Warhammer Fantasy Roleplay 4th Edition GM writing a flavor paragraph to set the mood for a combat encounter. " +
@@ -316,6 +329,18 @@ export class NarrativeGenerator {
     );
   }
 
+  /**
+   * Build the user-message payload for the Anthropic API call. Has two
+   * parts:
+   *  1. A human-readable callouts list with the most important grounding
+   *    facts (combat mode FIRST, then weapon groups, starting range,
+   *    predicted winner, decisiveness, pace, per-side headliners).
+   *  2. The full briefing JSON in a fenced block as canonical reference.
+   *
+   * The callouts go first because they're what Claude's prose imagery
+   * draws on most directly; the JSON below provides ground truth for
+   * anything the callouts don't explicitly mention.
+   */
   _buildUserPrompt(briefing) {
     // Pass the briefing as structured JSON inside a fenced block, plus
     // a small hand-written gloss so Claude doesn't have to re-derive
