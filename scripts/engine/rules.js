@@ -33,8 +33,15 @@ const LOCATION_TO_ARMOUR = {
  * item data or older templates — `damage.value` is a string like "SB + 4" or
  * "SB+4" or "4". This helper handles all of those, plus the `meleeValue` /
  * `rangedValue` resolved fields that appear on prepared weapon data.
+ *
+ * Bare numerics ("4") return the literal number - they do NOT add SB.
+ * WFRP4e weapons that scale with Strength Bonus use explicit "SB+N" or
+ * "SB" notation; bare numbers are fixed damage (typical for ranged
+ * weapons). This is the single source of truth for damage parsing
+ * across the module - both the engine (for damage resolution) and the
+ * AI (for "best weapon" comparisons) consume this same function.
  */
-function parseWeaponDamage(weapon, attacker) {
+export function parseWeaponDamage(weapon, attacker) {
   const sys = weapon.system ?? {};
   const dmg = sys.damage ?? {};
   const sb = attacker.bonus("s");
@@ -54,8 +61,13 @@ function parseWeaponDamage(weapon, attacker) {
   return 0;
 }
 
-/** Evaluate "SB + 4", "4", "SB+3", "3+SB" into a number. Returns null on failure. */
-function evalDamageExpr(expr, sb) {
+/**
+ * Evaluate a weapon damage expression like "SB + 4", "4", "SB+3", "3+SB",
+ * "SB-1" into a number. Returns null on failure. Exported so callers that
+ * already have an `sb` value in hand can use it directly (the AI does
+ * this when comparing weapons; the engine wraps it via parseWeaponDamage).
+ */
+export function evalDamageExpr(expr, sb) {
   if (!expr) return null;
   // Normalise: strip whitespace, upper-case.
   const s = String(expr).replace(/\s+/g, "").toUpperCase();

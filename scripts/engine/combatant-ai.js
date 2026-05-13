@@ -9,6 +9,8 @@
  *  - If heavily wounded (<=25% wounds), consider defending.
  */
 
+import { parseWeaponDamage } from "./rules.js";
+
 export class CombatantAI {
   /**
    * Pick what action this combatant should take this turn. Returns an action
@@ -119,31 +121,14 @@ export class CombatantAI {
 
   /**
    * Sort weapons by computed damage and return the highest-damage one.
-   * Damage parsing handles all the wfrp4e formats: numeric values, "SB",
-   * "SB+4", "4+SB", and string-encoded numbers. Strength Bonus is folded
-   * in once here so weapons are comparable on equal footing.
+   * Damage parsing delegates to the shared rules.parseWeaponDamage so
+   * the AI and the engine score weapons identically - previously they
+   * had separate parsers that disagreed on bare-numeric damage values.
    */
   _bestWeapon(self, weapons) {
-    const sb = self.bonus("s");
-    const damageOf = (w) => {
-      const d = w.system?.damage ?? {};
-      const candidates = [d.meleeValue, d.rangedValue, d.current, d.value];
-      for (const c of candidates) {
-        if (typeof c === "number" && !Number.isNaN(c)) return c;
-        if (typeof c === "string") {
-          const s = c.replace(/\s+/g, "").toUpperCase();
-          if (/^-?\d+$/.test(s)) return parseInt(s, 10) + sb;
-          if (s === "SB") return sb;
-          const m = s.match(/^SB([+-])(\d+)$/) || s.match(/^(\d+)([+-])SB$/);
-          if (m) {
-            if (m[0].startsWith("SB")) return sb + (m[1] === "+" ? 1 : -1) * parseInt(m[2], 10);
-            return parseInt(m[1], 10) + (m[2] === "+" ? 1 : -1) * sb;
-          }
-        }
-      }
-      return 0;
-    };
-    return [...weapons].sort((a, b) => damageOf(b) - damageOf(a))[0];
+    return [...weapons].sort((a, b) =>
+      parseWeaponDamage(b, self) - parseWeaponDamage(a, self)
+    )[0];
   }
 
   /** Return the highest-damage damaging spell, or null if none. */

@@ -92,6 +92,17 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const clinicalHTML = this._narrativeGen.renderClinicalSummary(this._narrativeBriefing);
     const hasApiKey = !!(game.settings.get(MODULE_ID, "anthropicApiKey") || "").trim();
 
+    // Sim fidelity notes: skipped-effects count + standing list of WFRP4e
+    // simplifications. Always shown so users can interpret results in
+    // context. The skipped-effects section only renders when count > 0.
+    const skipped = r.skippedEffects ?? { count: 0, paths: [] };
+    const simNotes = {
+      skippedEffectsCount: skipped.count,
+      skippedEffectsPathsText: skipped.paths.length
+        ? skipped.paths.join(", ")
+        : ""
+    };
+
     return {
       iterations: r.iterations,
       sides: sidesArr,
@@ -108,7 +119,8 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
         flavorError: this._narrativeFlavorError,
         loading: this._narrativeLoading,
         hasApiKey
-      }
+      },
+      simNotes
     };
   }
 
@@ -168,6 +180,11 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
    * Update the already-rendered narrative DOM in place with whatever flavor
    * state we're now in (text, error, or nothing). Keeps scroll position and
    * avoids a full _prepareContext re-run.
+   *
+   * Security note: all dynamic content interpolated into the innerHTML
+   * template strings below goes through foundry.utils.escapeHTML first.
+   * No user-controlled raw HTML reaches the DOM. The static markup
+   * (FontAwesome class names, our own i18n keys) is hardcoded.
    */
   _paintNarrativeFlavor() {
     const root = this.element;
@@ -203,6 +220,7 @@ export class ResultsApp extends HandlebarsApplicationMixin(ApplicationV2) {
     switch (code) {
       case "no-api-key": return "No Anthropic API key configured. Set one in the module settings to enable flavor text.";
       case "network": return "Couldn't reach the Anthropic API. Check your network connection.";
+      case "cors": return "The Anthropic API request was blocked by your browser (CORS). This usually means an ad-blocker, privacy extension, or network proxy is intercepting requests to api.anthropic.com. Try disabling browser extensions for this Foundry session, or check that your network allows direct connections to api.anthropic.com.";
       case "empty-response": return "The API returned no text. Try regenerating.";
       case "exception": return "Something went wrong while generating flavor text. Try regenerating.";
       default:

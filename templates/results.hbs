@@ -62,6 +62,37 @@
   </details>
   {{/if}}
 
+  {{#if simNotes}}
+  <details class="sim-notes">
+    <summary class="sim-notes-summary">
+      <i class="fas fa-flask"></i>
+      {{localize "WFRP4E_SIM.SimNotes.Title"}}
+    </summary>
+    <div class="sim-notes-body">
+      {{#if simNotes.skippedEffectsCount}}
+      <p class="sim-notes-flag">
+        <i class="fas fa-info-circle"></i>
+        {{simNotes.skippedEffectsCount}} {{localize "WFRP4E_SIM.SimNotes.SkippedEffects"}}
+        {{#if simNotes.skippedEffectsPathsText}}
+        <span class="sim-notes-paths" title="{{simNotes.skippedEffectsPathsText}}">
+          (<i class="fas fa-question-circle"></i> {{localize "WFRP4E_SIM.SimNotes.HoverForDetails"}})
+        </span>
+        {{/if}}
+      </p>
+      {{/if}}
+      <p class="sim-notes-intro">{{localize "WFRP4E_SIM.SimNotes.Intro"}}</p>
+      <ul class="sim-notes-list">
+        <li>{{localize "WFRP4E_SIM.SimNotes.Initiative"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Conditions"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Miscasts"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Stances"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.SharedActors"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.HitLocations"}}</li>
+      </ul>
+    </div>
+  </details>
+  {{/if}}
+
   <div class="results-scroll">
     {{#each sides}}
     <section class="side-results">

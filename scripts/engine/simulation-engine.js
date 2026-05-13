@@ -19,7 +19,11 @@ import { StatsTracker } from "./stats-tracker.js";
 import { Combatant } from "./combatant.js";
 import { ConditionManager } from "./condition-manager.js";
 import { resolveOpposedTest, resolveDamage, rollCriticalWound } from "./rules.js";
-import { applyCritEffectsToCombatant } from "./effect-applier.js";
+import {
+  applyCritEffectsToCombatant,
+  resetSkippedEffectsTracking,
+  getSkippedEffectsSummary
+} from "./effect-applier.js";
 
 export class SimulationEngine {
   constructor({ sides, config }) {
@@ -120,6 +124,10 @@ export class SimulationEngine {
     // one pass is enough.
     this._captureLoadouts();
 
+    // Reset cross-sim state on the effect applier so the skipped-effects
+    // counter reflects only this run. Results UI shows the total after.
+    resetSkippedEffectsTracking();
+
     // Yield to the UI periodically so Foundry stays responsive. For small
     // iteration counts, yield rarely; for large ones, yield ~100 times total.
     const yieldInterval = Math.max(5, Math.floor(this.iterations / 100));
@@ -139,6 +147,11 @@ export class SimulationEngine {
     // Engine-level config that the narrative generator needs but the tracker
     // doesn't carry. Attach here so NarrativeGenerator can see it.
     results.startingRange = this.startingRange;
+    // Skipped-effects summary: how many crit Active Effect changes the
+    // applier had to drop because their target path wasn't a path we know
+    // how to mutate on a Combatant. Surfaces in the results UI as a small
+    // fidelity hint so users know when the sim is approximating.
+    results.skippedEffects = getSkippedEffectsSummary();
     return results;
   }
 

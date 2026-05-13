@@ -18,6 +18,36 @@
 
 const UNHANDLED_PATHS_LOGGED = new Set();
 
+// Session-level counter of effect changes that were skipped because the
+// applier didn't know how to translate them. Per-sim consumers reset this
+// before running, then read it after to surface the number to users via
+// the results UI ("N effects from crits couldn't be applied"). Tracks both
+// the total count and a Set of unique paths for use in the UI tooltip.
+let skippedEffectsCount = 0;
+const skippedEffectsPaths = new Set();
+
+/**
+ * Reset the skipped-effects counters. The simulation engine calls this
+ * once at the start of run() so the counter reflects only the current sim.
+ */
+export function resetSkippedEffectsTracking() {
+  skippedEffectsCount = 0;
+  skippedEffectsPaths.clear();
+}
+
+/**
+ * Read the current skipped-effects summary. Returns the running total
+ * count of effect changes that couldn't be applied this sim, plus a
+ * sorted unique list of the change paths involved. Safe to call at any
+ * time; only meaningful after a sim run completes.
+ */
+export function getSkippedEffectsSummary() {
+  return {
+    count: skippedEffectsCount,
+    paths: [...skippedEffectsPaths].sort()
+  };
+}
+
 // Foundry active effect modes
 const MODE_CUSTOM     = 0;
 const MODE_MULTIPLY   = 1;
@@ -286,13 +316,15 @@ function _parseNarrativePenalties(text) {
 }
 
 /**
- * Log a warning about an Active Effect path we couldn't handle, but only
- * once per unique path/key combination per session. Without the dedupe,
- * a 10,000-iteration sim would flood the console with the same warning
- * for every iteration that hits the same unhandled effect. The
- * UNHANDLED_PATHS_LOGGED Set tracks what's been logged already.
+ * Log a warning about an Active Effect path we couldn't handle, and bump
+ * the session counter so the results UI can report the total count.
+ * Console-logs once per unique path/key per session to avoid spam; the
+ * counter bumps every call so it reflects how many crits were partially
+ * applied across all iterations.
  */
 function _logUnhandled(key, message) {
+  skippedEffectsCount++;
+  skippedEffectsPaths.add(key);
   if (UNHANDLED_PATHS_LOGGED.has(key)) return;
   UNHANDLED_PATHS_LOGGED.add(key);
   console.warn(`WFRP4e Combat Simulator | ${message}`);

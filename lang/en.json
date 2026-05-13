@@ -104,5 +104,16 @@
   "WFRP4E_SIM.Narrative.Flavor": "Battle Account",
   "WFRP4E_SIM.Narrative.Regenerate": "Generate a fresh flavor paragraph",
   "WFRP4E_SIM.Narrative.Generating": "Generating flavor text...",
-  "WFRP4E_SIM.Narrative.NoApiKey": "Configure an Anthropic API key in the module settings to add AI-generated flavor text to this summary."
+  "WFRP4E_SIM.Narrative.NoApiKey": "Configure an Anthropic API key in the module settings to add AI-generated flavor text to this summary.",
+
+  "WFRP4E_SIM.SimNotes.Title": "Sim Notes (fidelity disclosures)",
+  "WFRP4E_SIM.SimNotes.Intro": "This simulator approximates several WFRP4e rules to keep iterations fast. Real combat at your table may diverge from these results when:",
+  "WFRP4E_SIM.SimNotes.Initiative": "Initiative is a flat 1d10 + I + Ag bonus, not the WFRP4e opposed Initiative vs Cool test for surprise rounds.",
+  "WFRP4E_SIM.SimNotes.Conditions": "Poisoned uses a flat 50% per stack instead of a real Toughness test; Ablaze damage is approximated as stacks+1 rather than 1d10.",
+  "WFRP4E_SIM.SimNotes.Miscasts": "Miscasts fire on any double, with no consultation of the Minor/Major Miscast tables - the event is recorded but no follow-on effect is applied.",
+  "WFRP4E_SIM.SimNotes.Stances": "Defensive, Aggressive, and Total Defence stance trade-offs are not modeled. Combatants either attack or defend; mid-attack stance choice is the AI's decision.",
+  "WFRP4E_SIM.SimNotes.SharedActors": "When one actor is dropped into the sim multiple times, each entry rolls independently and Apply stacks the results sequentially onto the single source sheet.",
+  "WFRP4E_SIM.SimNotes.HitLocations": "Hit-location bands use the static core table without weapon-quality reassignments (Hack, Impale).",
+  "WFRP4E_SIM.SimNotes.SkippedEffects": "crit Active Effect change(s) couldn't be applied this sim - the sim still ran, but some crit consequences (rare custom-mode effects, unmapped paths) were dropped.",
+  "WFRP4E_SIM.SimNotes.HoverForDetails": "hover for details"
 }

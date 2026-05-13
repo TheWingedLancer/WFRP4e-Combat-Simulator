@@ -294,7 +294,24 @@ export class NarrativeGenerator {
       if (!text) return { error: "empty-response" };
       return { text };
     } catch (err) {
-      return { error: "network", detail: err?.message ?? String(err) };
+      // Browser fetch errors are infuriatingly generic: a CORS rejection,
+      // an offline browser, and a server-not-resolving all produce the same
+      // "TypeError: Failed to fetch" without leaking which one. We can,
+      // however, distinguish online-but-fetch-failed (likely CORS) from
+      // offline (browser knows it's offline). When navigator.onLine is
+      // true and fetch still threw, CORS is the most likely cause - the
+      // anthropic-dangerous-direct-browser-access header may not have
+      // taken effect, an extension is blocking the request, or the user's
+      // network sits behind a CORS-stripping proxy.
+      const msg = err?.message ?? String(err);
+      const isOffline =
+        typeof navigator !== "undefined" && navigator.onLine === false;
+      const looksLikeCORS =
+        !isOffline && /fetch|failed to fetch|networkerror/i.test(msg);
+      return {
+        error: looksLikeCORS ? "cors" : "network",
+        detail: msg
+      };
     }
   }
 

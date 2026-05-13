@@ -13,9 +13,15 @@ const MODULE_ID = "wfrp4e-combat-simulator";
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
 
-  // Expose API for macros and other modules.
+  // Expose API for macros and other modules. The open() entry point
+  // guards against missing-system worlds; the engine/AI/results classes
+  // are still exported so external code can reuse them for their own
+  // wfrp4e-system-aware tooling without going through the UI.
   game.modules.get(MODULE_ID).api = {
-    open: () => new CombatSimulatorApp().render(true),
+    open: () => {
+      if (blockedNoSystem()) return;
+      new CombatSimulatorApp().render(true);
+    },
     SimulationEngine,
     CombatantAI,
     ResultsApp
@@ -73,12 +79,38 @@ Hooks.once("init", () => {
   });
 });
 
+// Set true at ready time when the wfrp4e system is detected. The module's
+// UI hooks check this and refuse to render buttons or open the simulator
+// without the system, because every code path downstream assumes wfrp4e
+// data shapes (weaponGroup, characteristic abbrevs, crit tables). With no
+// system, the sim would either silently produce garbage or throw on a
+// random later call - strict-mode fails loudly instead.
+let systemReady = false;
+
 Hooks.once("ready", () => {
   console.log(`${MODULE_ID} | Ready`);
-  if (!game.wfrp4e) {
-    ui.notifications.error("WFRP4e Combat Simulator requires the wfrp4e system.");
+  if (game.wfrp4e) {
+    systemReady = true;
+  } else {
+    ui.notifications.error(
+      "WFRP4e Combat Simulator requires the wfrp4e system. " +
+      "The simulator is disabled on this world."
+    );
   }
 });
+
+/**
+ * Guard - return true and warn the user if the wfrp4e system isn't loaded.
+ * Used by every entry point that would interact with sim machinery.
+ */
+function blockedNoSystem() {
+  if (systemReady) return false;
+  ui.notifications.error(
+    "WFRP4e Combat Simulator requires the wfrp4e system. " +
+    "Activate the wfrp4e game system on this world to use the simulator."
+  );
+  return true;
+}
 
 /**
  * Add a scene control button for GMs.
@@ -94,7 +126,9 @@ Hooks.on("getSceneControlButtons", (controls) => {
     icon: "fas fa-swords",
     order: Object.keys(tokenControls.tools).length,
     button: true,
-    visible: game.user.isGM,
+    // Hidden entirely on non-wfrp4e worlds - the simulator is unusable
+    // without the system, so the button shouldn't exist to be misclicked.
+    visible: game.user.isGM && systemReady,
     onChange: () => {
       const existing = foundry.applications.instances.get("wfrp4e-combat-simulator");
       if (existing) existing.close();
@@ -110,6 +144,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
  */
 Hooks.on("renderActorDirectory", (app, html) => {
   if (!game.user.isGM) return;
+  if (!systemReady) return; // strict: no button on non-wfrp4e worlds
 
   const root = html instanceof HTMLElement ? html : html[0];
   if (!root) return;
@@ -127,6 +162,9 @@ Hooks.on("renderActorDirectory", (app, html) => {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "wfrp4e-sim-open";
+  // Security note: innerHTML usage is safe here - the only dynamic part
+  // is the i18n key "WFRP4E_SIM.OpenSimulator" which is resolved from our
+  // own lang/en.json bundled in the module. No user input touches this.
   btn.innerHTML = `<i class="fas fa-swords"></i> ${game.i18n.localize("WFRP4E_SIM.OpenSimulator")}`;
   btn.addEventListener("click", () => game.modules.get(MODULE_ID).api.open());
   actionGroup.appendChild(btn);
