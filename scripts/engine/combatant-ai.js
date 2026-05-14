@@ -10,6 +10,7 @@
  */
 
 import { parseWeaponDamage } from "./rules.js";
+import { RANGED_WEAPON_GROUPS } from "./combatant.js";
 
 export class CombatantAI {
   /**
@@ -41,7 +42,13 @@ export class CombatantAI {
     if (!enemies.length) return null;
 
     const target = this._chooseTarget(self, enemies);
-    const weapons = self.getWeapons();
+    // Unified weapon list: equipped weapons + natural-weapon traits.
+    // Real weapons and natural attacks compete on equal footing in
+    // _bestWeapon's damage sort; the tie-break in _bestWeapon prefers
+    // primary attacks (real weapons, "Weapon (X)" traits) over Free
+    // Attack-style trait weapons (Bite, Tail Attack, etc.) so creatures
+    // with multiple natural attacks pick the right primary.
+    const weapons = self.getAttackingWeapons();
     const spells = self.getSpells();
 
     const meleeWeapons = weapons.filter(w => this._isMelee(w));
@@ -79,25 +86,11 @@ export class CombatantAI {
       return { type: "move", target, newRange: nextRange };
     }
 
-    // Has melee weapon but currently only has ranged situation and no ammo? Default: defend.
+    // No usable weapons of any kind, no spells - all that's left is defend.
+    // The v0.1.20 unified weapon list folds in natural weapons, so the
+    // previous "find a trait that vaguely looks like a weapon" fallback
+    // from earlier versions is no longer needed and has been removed.
     if (meleeWeapons.length === 0 && rangedWeapons.length === 0) {
-      // Unarmed - use trait weapon if any, else defend.
-      const weaponTrait = self.items.find(i => i.type === "trait" && /weapon/i.test(i.name));
-      if (weaponTrait) {
-        const pseudo = {
-          id: weaponTrait.id,
-          name: weaponTrait.name,
-          type: "weapon",
-          system: {
-            damage: { value: parseInt(weaponTrait.system?.specification?.value ?? 0) || 0 },
-            weaponGroup: { value: "basic" },
-            qualities: { value: [] },
-            flaws: { value: [] },
-            equipped: { value: true }
-          }
-        };
-        return { type: "melee", weapon: pseudo, target };
-      }
       return { type: "defend" };
     }
 
@@ -122,13 +115,35 @@ export class CombatantAI {
   /**
    * Sort weapons by computed damage and return the highest-damage one.
    * Damage parsing delegates to the shared rules.parseWeaponDamage so
-   * the AI and the engine score weapons identically - previously they
-   * had separate parsers that disagreed on bare-numeric damage values.
+   * the AI and the engine score weapons identically.
+   *
+   * Tie-breaker priority (when damage values are equal):
+   *  1. Real equipped weapons - assumed to be the actor's primary attack.
+   *  2. "Weapon (X)" trait pseudo-weapons - per the rulebook these are
+   *     the creature's primary attack ("carries a melee weapon, or uses
+   *     teeth, claws, or similar").
+   *  3. Other natural-weapon traits (Bite, Tail Attack, Tongue Attack,
+   *     Tentacles, Horns, Hooves, etc.) - these are most often Free
+   *     Attacks per the rulebook, and should not be preferred over the
+   *     primary attack when damage is equal.
+   *
+   * Free Attack mechanics themselves are out of scope for v0.1.20 - the
+   * AI just picks the best primary attack each turn. Cockatrice example:
+   * Talons / Bite / Tail Attack all resolve to 7 damage; this tie-break
+   * makes the AI correctly pick Talons (Weapon trait, primary) over
+   * Bite (Free Attack) and Tail Attack (Free Attack).
    */
   _bestWeapon(self, weapons) {
-    return [...weapons].sort((a, b) =>
-      parseWeaponDamage(b, self) - parseWeaponDamage(a, self)
-    )[0];
+    const tieRank = (w) => {
+      if (!w._isNaturalWeapon) return 0; // real weapon: best
+      if (/^Weapon\b/i.test(w.name)) return 1; // "Weapon (X)" trait: primary natural
+      return 2; // other natural attack: typically a Free Attack in the rules
+    };
+    return [...weapons].sort((a, b) => {
+      const damageDiff = parseWeaponDamage(b, self) - parseWeaponDamage(a, self);
+      if (damageDiff !== 0) return damageDiff;
+      return tieRank(a) - tieRank(b);
+    })[0];
   }
 
   /** Return the highest-damage damaging spell, or null if none. */
@@ -139,13 +154,25 @@ export class CombatantAI {
   }
 
   /**
-   * Classify a weapon as melee or ranged by its weaponGroup. The list of
-   * ranged groups matches what the WFRP4e system itself uses internally.
+   * Classify a weapon as melee or ranged.
+   *
+   * Three paths in priority order:
+   *  1. Natural-weapon pseudo-weapons (from getNaturalWeapons): check the
+   *     `_rollCharacteristic` flag set from the trait's rollable block.
+   *     `bs` -> ranged, anything else -> melee. The synthetic
+   *     `_naturalMelee` / `_naturalRanged` group keys would also work but
+   *     reading the rollCharacteristic is the authoritative source.
+   *  2. Real weapons with a known weaponGroup: ranged groups (bow,
+   *     crossbow, blackpowder, engineering, sling, throwing, entangling)
+   *     are ranged; everything else is melee.
+   *  3. Unknown groups default to melee.
    */
   _isMelee(weapon) {
+    if (weapon._isNaturalWeapon) {
+      return weapon._rollCharacteristic !== "bs";
+    }
     const group = weapon.system?.weaponGroup?.value;
-    const rangedGroups = ["bow", "crossbow", "blackpowder", "engineering", "sling", "throwing", "entangling"];
-    return !rangedGroups.includes(group);
+    return !RANGED_WEAPON_GROUPS.has(group);
   }
 
   _isRanged(weapon) {

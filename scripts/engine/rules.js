@@ -70,7 +70,16 @@ export function parseWeaponDamage(weapon, attacker) {
 export function evalDamageExpr(expr, sb) {
   if (!expr) return null;
   // Normalise: strip whitespace, upper-case.
-  const s = String(expr).replace(/\s+/g, "").toUpperCase();
+  let s = String(expr).replace(/\s+/g, "").toUpperCase();
+  // Strip a single leading '+' - several bestiary and weapon entries store
+  // damage as "+8" or "+10" where the plus is purely decorative ("plus 8").
+  // Affects: pistols/blackpowder weapons, damage spells (Chain Attack "+4"),
+  // creature ranged-trait specs ("Breath (+10)").  Without this strip,
+  // "+8".split("+") yields ["", "8"] and the empty string fails int-parse,
+  // causing the weapon to silently parse to null/0 damage.
+  if (s.startsWith("+") && s.length > 1 && /^\+\d/.test(s)) {
+    s = s.slice(1);
+  }
   // Pure integer
   if (/^-?\d+$/.test(s)) return parseInt(s, 10);
   // SB + n or n + SB, with optional sign
@@ -370,9 +379,15 @@ export function resolveDamage({ attacker, defender, weapon, sl, hitLocation }) {
   // when the weapon uses SB. The parser already added SB for "SB+X" forms.
   // Heuristic: if damage.value is a string containing "SB", we trust the parse;
   // otherwise we add SB for melee weapons that use it.
+  //
+  // Natural-weapon pseudo-weapons (from trait items) carry already-resolved
+  // damage values - the bonus characteristic from the trait's rollable
+  // block has been folded in at construction time. They must NOT have SB
+  // added again here, regardless of weapon-group classification.
   const rawDamageStr = String(weapon.system?.damage?.value ?? "");
   const alreadyIncludesSB = /SB/i.test(rawDamageStr);
-  const weaponDamage = (!alreadyIncludesSB && flags.usesSB !== false)
+  const isNaturalWeapon = weapon._isNaturalWeapon === true;
+  const weaponDamage = (!alreadyIncludesSB && !isNaturalWeapon && flags.usesSB !== false)
     ? parsedDamage + sb
     : parsedDamage;
 

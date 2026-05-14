@@ -80,6 +80,39 @@ export class SimulationEngine {
           else melee.push(descriptor);
         }
 
+        // Natural-weapon traits (v0.1.20). Scan the actor's traits for
+        // damage-flagged ones, dedupe by name, classify by the trait's
+        // rollCharacteristic. The parenthetical specifier (the "X" in
+        // "Weapon (X)" or "Bite (X)") goes into the narrative descriptor
+        // so flavor text can describe talons, beaks, hooves, etc.
+        // accurately rather than generic "natural weapon".
+        const seenNaturals = new Set();
+        const naturalWeapons = [];
+        for (const trait of actor.items) {
+          if (trait.type !== "trait") continue;
+          const rollable = trait.system?.rollable;
+          if (!rollable?.damage) continue;
+          if (seenNaturals.has(trait.name)) continue;
+          seenNaturals.add(trait.name);
+
+          // Parenthetical specifier ("Talons", "Fanged Beak", etc.) for
+          // narrative descriptions. Falls back to the trait name itself
+          // when there's no parenthetical (e.g. "Horns", "Tail Attack").
+          const parenMatch = trait.name.match(/\(([^)]+)\)/);
+          const specifier = parenMatch ? parenMatch[1] : trait.name;
+
+          const isRangedNat = rollable.rollCharacteristic === "bs";
+          const descriptor = {
+            name: trait.name,
+            specifier,
+            isNatural: true,
+            mode: isRangedNat ? "ranged" : "melee"
+          };
+          naturalWeapons.push(descriptor);
+          if (isRangedNat) ranged.push(descriptor);
+          else melee.push(descriptor);
+        }
+
         // Known damage spells - the AI casts these when engaged > short range
         // and no ranged weapon is to hand, so they affect the narrative too.
         const damageSpells = actor.items
@@ -89,23 +122,26 @@ export class SimulationEngine {
         // Primary mode: which kind of attack is this combatant mostly
         // going to make? Heuristic: if the fight starts at engaged or
         // short and they have melee, melee. If they only have ranged
-        // weapons, ranged. If they have both, "mixed".
+        // weapons, ranged. If they have both, "mixed". Natural weapons
+        // were folded into the melee/ranged arrays above.
         let primaryMode;
         if (melee.length && !ranged.length && !damageSpells.length) primaryMode = "melee";
         else if (ranged.length && !melee.length && !damageSpells.length) primaryMode = "ranged";
         else if (damageSpells.length && !melee.length && !ranged.length) primaryMode = "spell";
         else if (melee.length && ranged.length) primaryMode = "mixed";
-        else if (damageSpells.length) primaryMode = "mixed"; // spells + weapons
+        else if (damageSpells.length) primaryMode = "mixed";
         else primaryMode = "unarmed";
 
         this.stats.recordLoadout(entry.id, {
           melee,
           ranged,
+          naturalWeapons,
           damageSpells,
           primaryMode,
           hasMelee: melee.length > 0,
           hasRanged: ranged.length > 0,
-          hasSpells: damageSpells.length > 0
+          hasSpells: damageSpells.length > 0,
+          hasNaturals: naturalWeapons.length > 0
         });
       }
     }

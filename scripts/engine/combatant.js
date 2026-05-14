@@ -1,7 +1,19 @@
 /**
- * Combatant - a per-iteration mutable wrapper around an Actor's data.
- * NEVER mutates the real Actor document.
+ * Combatant - per-iteration mutable wrapper around an Actor's data.
+ * Deep-clones actor.system at construction so iteration-level state changes
+ * (wound damage, advantage gain, condition stacks) don't leak back to the
+ * real Actor document or to other iterations of the sim.
  */
+
+import { evalDamageExpr } from "./rules.js";
+
+// Weapon groups that resolve to ranged (BS) attacks. Used by weaponSkillFor
+// and several callers; centralized here so the list stays consistent if
+// wfrp4e ever adds a new ranged group.
+export const RANGED_WEAPON_GROUPS = new Set([
+  "bow", "crossbow", "blackpowder", "engineering",
+  "sling", "throwing", "entangling"
+]);
 
 export class Combatant {
   constructor({ entryId, sideId, sideName, actor, startingRange }) {
@@ -94,26 +106,59 @@ export class Combatant {
 
   /**
    * Find the right skill to test for an attack with the given weapon.
-   * Tries the system's weapon-group → skill mapping first (e.g. weapon
-   * group "basic" maps to skill "Basic", so the skill checked is
-   * "Melee (Basic)"). Falls back to raw WS/BS characteristic when no
-   * skill is found on the actor - matches what the WFRP4e system itself
-   * does for unskilled attacks.
+   *
+   * Algorithm:
+   *  1. Natural-weapon pseudo-weapons (created from trait items, marked with
+   *     `_isNaturalWeapon: true`) bypass skill lookup entirely - creature
+   *     trait stat blocks don't list specialized weapon skills, so they
+   *     test against raw WS/BS as indicated by the trait's
+   *     rollCharacteristic field.
+   *  2. For real weapons: classify melee vs ranged by weaponGroup, then
+   *     try the appropriate specialization first ("Melee (Basic)" for
+   *     a basic-group melee weapon, "Ranged (Bow)" for a bow-group ranged
+   *     weapon). Falls back to the OTHER skill class only if the actor
+   *     somehow has the cross-class one but not the expected one.
+   *  3. Final fallback: raw WS or BS characteristic, no skill - matches
+   *     the wfrp4e system's behavior for unskilled attacks.
    *
    * Returns: { total, characteristic, advances, name } - same shape as
    * getSkill so callers can use both interchangeably.
    */
   weaponSkillFor(weapon) {
+    // Natural weapon (trait-based pseudo-weapon): no skill lookup,
+    // use the rollCharacteristic that came from the trait's rollable block.
+    if (weapon._isNaturalWeapon) {
+      const rc = weapon._rollCharacteristic === "bs" ? "bs" : "ws";
+      return {
+        total: this.characteristic(rc),
+        characteristic: rc,
+        advances: 0,
+        name: ""
+      };
+    }
+
     const groupKey = weapon.system?.weaponGroup?.value;
+    const isRanged = groupKey && RANGED_WEAPON_GROUPS.has(groupKey);
+
     // System-defined skill name mapping if available.
     const skillName = game.wfrp4e?.config?.weaponGroups?.[groupKey];
     if (skillName) {
-      const skill = this.getSkill(`Melee (${skillName})`) ?? this.getSkill(`Ranged (${skillName})`);
+      // Try the expected class first (Ranged for ranged groups, Melee for
+      // melee groups). Cross-class fallback only if the expected isn't on
+      // the actor - rare but possible for hybrid stat blocks.
+      const primary = isRanged ? `Ranged (${skillName})` : `Melee (${skillName})`;
+      const secondary = isRanged ? `Melee (${skillName})` : `Ranged (${skillName})`;
+      const skill = this.getSkill(primary) ?? this.getSkill(secondary);
       if (skill) return skill;
     }
+
     // Fallback: use raw WS/BS.
-    const isRanged = weapon.system?.weaponGroup?.value && ["bow", "crossbow", "blackpowder", "engineering", "sling", "throwing", "entangling"].includes(weapon.system.weaponGroup.value);
-    return { total: this.characteristic(isRanged ? "bs" : "ws"), characteristic: isRanged ? "bs" : "ws", advances: 0, name: "" };
+    return {
+      total: this.characteristic(isRanged ? "bs" : "ws"),
+      characteristic: isRanged ? "bs" : "ws",
+      advances: 0,
+      name: ""
+    };
   }
 
   /**
@@ -139,6 +184,110 @@ export class Combatant {
     return this.items.filter(i => i.type === "spell");
   }
 
+  /**
+   * Return natural-weapon pseudo-weapons built from damaging traits.
+   *
+   * A trait counts as a natural weapon when `system.rollable.damage` is
+   * true. The rollable block on the trait carries every piece of
+   * information the sim needs:
+   *   - rollCharacteristic ("ws" -> melee, "bs" -> ranged)
+   *   - bonusCharacteristic ("s" -> add Strength Bonus to the spec value,
+   *     "" -> spec value is final damage)
+   *   - specification.value contains the rating (may have a decorative
+   *     leading "+" stripped by evalDamageExpr)
+   *
+   * The returned pseudo-weapons have the same shape as real weapon items
+   * so the AI and engine can treat them identically. They carry three
+   * extra fields to mark them:
+   *   - _isNaturalWeapon: true
+   *   - _rollCharacteristic: from rollable.rollCharacteristic
+   *   - _bonusCharacteristic: from rollable.bonusCharacteristic
+   *
+   * De-duplication: if a creature has the same trait listed twice (a
+   * common Foundry import quirk - the Great Taurus's two
+   * `Weapon (Burning Hooves)` entries are a known example), only the
+   * first occurrence is returned. WFRP4e does not grant extra attacks
+   * for duplicate trait entries; multiple attacks per round require the
+   * Free Attack mechanic (out of scope for v0.1.20).
+   *
+   * Traits with `rollable.damage` but a missing or unparseable
+   * specification value are dropped - they're definitional traits, not
+   * combat-actionable. The cockatrice's `Wicked Claws` (which grants
+   * Damaging quality, not damage) is excluded this way: its rollable
+   * block doesn't carry damage=true.
+   */
+  getNaturalWeapons() {
+    const seen = new Set();
+    const naturals = [];
+
+    for (const trait of this.items) {
+      if (trait.type !== "trait") continue;
+      const rollable = trait.system?.rollable;
+      if (!rollable?.damage) continue;
+
+      // De-dupe by name.
+      if (seen.has(trait.name)) continue;
+      seen.add(trait.name);
+
+      const spec = trait.system?.specification?.value;
+      const sb = this.bonus("s");
+      const wpb = this.bonus("wp");
+      // Resolve the damage rating: spec value + bonus characteristic.
+      // evalDamageExpr handles the leading "+" prefix common on creature
+      // ratings ("+10" for Breath, "+4" for Bite).
+      const baseDamage = evalDamageExpr(spec, sb);
+      if (baseDamage === null) continue; // trait has damage flag but unparseable rating
+
+      const bonusChar = rollable.bonusCharacteristic ?? "";
+      let bonusValue = 0;
+      if (bonusChar === "s") bonusValue = sb;
+      else if (bonusChar === "wp") bonusValue = wpb;
+      // Other bonus characteristics could be added here if wfrp4e adds them.
+
+      const totalDamage = baseDamage + bonusValue;
+
+      const rollChar = rollable.rollCharacteristic === "bs" ? "bs" : "ws";
+      // attackType in the rollable block is unreliable (Foundry data has
+      // Breath traits marked as melee). Trust rollCharacteristic - bs is
+      // ranged, ws is melee.
+      const isRanged = rollChar === "bs";
+
+      naturals.push({
+        id: trait.id ?? `nat-${trait.name}`,
+        name: trait.name,
+        type: "weapon",
+        system: {
+          damage: { value: totalDamage },
+          // Mark with a synthetic group key so weaponGroup-based logic
+          // (qualities, system-skill mapping) can still run safely. The
+          // _isNaturalWeapon flag is what callers actually branch on.
+          weaponGroup: { value: isRanged ? "_naturalRanged" : "_naturalMelee" },
+          qualities: { value: [] },
+          flaws: { value: [] },
+          equipped: { value: true }
+        },
+        _isNaturalWeapon: true,
+        _rollCharacteristic: rollChar,
+        _bonusCharacteristic: bonusChar
+      });
+    }
+
+    return naturals;
+  }
+
+  /**
+   * Return the full list of weapons available for selection: equipped
+   * weapons plus natural-weapon traits. This is what the AI uses for
+   * "best weapon" selection so equipped weapons and natural weapons
+   * compete on equal footing. Most actors return just their equipped
+   * weapons; creatures with trait-based attacks return primarily
+   * naturals; hybrids (e.g. Beastmen with both a sword and Horns) return
+   * a combined list.
+   */
+  getAttackingWeapons() {
+    return [...this.getWeapons(), ...this.getNaturalWeapons()];
+  }
+
   /** Case-insensitive talent presence check. */
   hasTalent(name) {
     return this.items.some(i => i.type === "talent" && i.name.toLowerCase() === name.toLowerCase());
@@ -155,21 +304,55 @@ export class Combatant {
    * sums their AP values for the location. Also adds the Armour trait's
    * value (which applies everywhere) when present - so creatures with
    * Armour (3) get +3 AP at every location.
+   *
+   * Data shape notes (v0.1.20):
+   *  - Equipped flag: real NPC/PC armour items store this as
+   *    `system.equipped: true` (bare boolean). Some sources use the
+   *    wrapped `{value: true}` shape, others use `system.worn.value`.
+   *    We accept any of the three.
+   *  - AP block: the canonical shape for prepared armour data is
+   *    `system.AP[location] = N` (plain integer per location). Earlier
+   *    code looked at maxAP/currentAP wrapped-value shapes which only
+   *    appear on unprepared/raw item data; those are kept as fallbacks
+   *    but the primary read is `system.AP`.
+   *  - Armour trait: rating can be in either the trait's specification
+   *    value or embedded in the trait name itself (e.g. "Armour (6)").
+   *    We check spec first, then fall back to the name regex.
    */
   getArmourAt(location = "body") {
     let ap = 0;
     for (const item of this.items) {
       if (item.type !== "armour") continue;
-      const equipped = item.system?.worn?.value ?? item.system?.equipped?.value;
-      if (!equipped) continue;
-      const locations = item.system?.maxAP ?? item.system?.currentAP ?? {};
-      const apAtLoc = locations[location]?.value ?? locations[location];
-      if (typeof apAtLoc === "number") ap += apAtLoc;
+      // Accept multiple equipped-flag shapes. `equipped: true` is the
+      // most common form on prepared NPC/PC actors; the others are
+      // legacy/unprepared variants.
+      const eq = item.system?.equipped;
+      const worn = item.system?.worn;
+      const isEquipped =
+        (typeof eq === "boolean" && eq) ||
+        (typeof eq === "object" && eq !== null && !!eq.value) ||
+        (typeof worn === "boolean" && worn) ||
+        (typeof worn === "object" && worn !== null && !!worn.value);
+      if (!isEquipped) continue;
+
+      // Read AP. Try the prepared-data shape first (numbers per location),
+      // then the wrapped shapes for older or raw item data.
+      const apBlock = item.system?.AP ?? item.system?.maxAP ?? item.system?.currentAP ?? {};
+      const raw = apBlock[location];
+      const apAtLoc =
+        typeof raw === "number" ? raw :
+        (raw && typeof raw === "object" && typeof raw.value === "number") ? raw.value :
+        0;
+      ap += apAtLoc;
     }
-    // Traits: Armour (X) adds AP everywhere.
+    // Traits: Armour (X) adds AP everywhere. The rating lives in
+    // specification.value when the trait name is the bare "Armour" and
+    // in the name itself when the trait is named "Armour (N)".
     const armourTrait = this.items.find(i => i.type === "trait" && /^armour/i.test(i.name));
     if (armourTrait) {
-      const val = parseInt(armourTrait.system?.specification?.value ?? armourTrait.name.match(/\d+/)?.[0] ?? 0);
+      const specVal = armourTrait.system?.specification?.value;
+      const nameDigit = armourTrait.name.match(/\d+/)?.[0];
+      const val = parseInt(specVal ?? nameDigit ?? 0);
       if (!Number.isNaN(val)) ap += val;
     }
     return ap;
