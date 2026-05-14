@@ -128,7 +128,9 @@ Hooks.on("getSceneControlButtons", (controls) => {
     button: true,
     // Hidden entirely on non-wfrp4e worlds - the simulator is unusable
     // without the system, so the button shouldn't exist to be misclicked.
-    visible: game.user.isGM && systemReady,
+    // Same caveat as the actor-sidebar button: check game.wfrp4e directly
+    // because this hook can fire before our own ready hook flips systemReady.
+    visible: game.user.isGM && !!game.wfrp4e,
     onChange: () => {
       const existing = foundry.applications.instances.get("wfrp4e-combat-simulator");
       if (existing) existing.close();
@@ -144,7 +146,12 @@ Hooks.on("getSceneControlButtons", (controls) => {
  */
 Hooks.on("renderActorDirectory", (app, html) => {
   if (!game.user.isGM) return;
-  if (!systemReady) return; // strict: no button on non-wfrp4e worlds
+  // Strict mode: only attach button on wfrp4e worlds. Checking game.wfrp4e
+  // directly rather than the systemReady flag because the renderActorDirectory
+  // hook can fire BEFORE the ready hook on world load - by that point
+  // game.wfrp4e is already populated by Foundry's system loader, but our
+  // own systemReady flag hasn't been flipped yet.
+  if (!game.wfrp4e) return;
 
   const root = html instanceof HTMLElement ? html : html[0];
   if (!root) return;

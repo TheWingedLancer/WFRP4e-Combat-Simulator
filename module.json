@@ -2,7 +2,7 @@
   "id": "wfrp4e-combat-simulator",
   "title": "WFRP4e Combat Simulator",
   "description": "Run Monte Carlo simulations of WFRP4e combat encounters. Drag actors into two or more sides, configure victory conditions and iteration count, then get per-participant damage statistics, critical wound summaries, and predicted winners.",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "compatibility": {
     "minimum": "13",
     "verified": "13",
