@@ -1,0 +1,208 @@
+{{!-- Simulation Results --}}
+<div class="results-layout">
+
+  <header class="results-header">
+    <div class="results-summary">
+      <h2 class="results-title">{{localize "WFRP4E_SIM.ResultsTitle"}}</h2>
+      <div class="results-meta">
+        <span><strong>{{iterations}}</strong> {{localize "WFRP4E_SIM.IterationsRan"}}</span>
+        <span><strong>{{avgRounds}}</strong> {{localize "WFRP4E_SIM.AvgRounds"}}</span>
+        <span><strong>{{drawRatePct}}%</strong> {{localize "WFRP4E_SIM.Draws"}}</span>
+      </div>
+    </div>
+
+    {{#if predictedWinner}}
+    <div class="predicted-winner">
+      <i class="fas fa-crown"></i>
+      <span class="winner-label">{{localize "WFRP4E_SIM.PredictedWinner"}}</span>
+      <span class="winner-name">{{predictedWinner.name}}</span>
+      <span class="winner-rate">{{predictedWinnerPct}}%</span>
+    </div>
+    {{/if}}
+  </header>
+
+  {{#if narrative}}
+  <details class="sim-narrative" open>
+    <summary class="sim-narrative-summary">
+      <i class="fas fa-scroll"></i>
+      {{localize "WFRP4E_SIM.Narrative.Title"}}
+    </summary>
+    <div class="sim-narrative-body">
+      <div class="sim-narrative-clinical">{{{narrative.clinicalHTML}}}</div>
+      {{#if narrative.hasApiKey}}
+      <div class="sim-narrative-flavor-wrap">
+        <div class="sim-narrative-flavor-header">
+          <span class="sim-narrative-flavor-label">
+            <i class="fas fa-feather"></i>
+            {{localize "WFRP4E_SIM.Narrative.Flavor"}}
+          </span>
+          <button type="button" data-action="regenerateNarrative"
+                  class="sim-narrative-regenerate" title="{{localize 'WFRP4E_SIM.Narrative.Regenerate'}}">
+            <i class="fas fa-arrows-rotate"></i>
+          </button>
+        </div>
+        <div class="sim-narrative-flavor">
+          {{#if narrative.flavor}}
+            <p>{{narrative.flavor}}</p>
+          {{else}}
+            <em class="sim-narrative-loading">
+              <i class="fas fa-spinner fa-spin"></i>
+              {{localize "WFRP4E_SIM.Narrative.Generating"}}
+            </em>
+          {{/if}}
+        </div>
+      </div>
+      {{else}}
+      <p class="sim-narrative-no-key">
+        <i class="fas fa-key"></i>
+        {{localize "WFRP4E_SIM.Narrative.NoApiKey"}}
+      </p>
+      {{/if}}
+    </div>
+  </details>
+  {{/if}}
+
+  {{#if simNotes}}
+  <details class="sim-notes">
+    <summary class="sim-notes-summary">
+      <i class="fas fa-flask"></i>
+      {{localize "WFRP4E_SIM.SimNotes.Title"}}
+    </summary>
+    <div class="sim-notes-body">
+      {{#if simNotes.skippedEffectsCount}}
+      <p class="sim-notes-flag">
+        <i class="fas fa-info-circle"></i>
+        {{simNotes.skippedEffectsCount}} {{localize "WFRP4E_SIM.SimNotes.SkippedEffects"}}
+        {{#if simNotes.skippedEffectsPathsText}}
+        <span class="sim-notes-paths" title="{{simNotes.skippedEffectsPathsText}}">
+          (<i class="fas fa-question-circle"></i> {{localize "WFRP4E_SIM.SimNotes.HoverForDetails"}})
+        </span>
+        {{/if}}
+      </p>
+      {{/if}}
+      <p class="sim-notes-intro">{{localize "WFRP4E_SIM.SimNotes.Intro"}}</p>
+      <ul class="sim-notes-list">
+        <li>{{localize "WFRP4E_SIM.SimNotes.Initiative"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Conditions"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Miscasts"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.Stances"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.SharedActors"}}</li>
+        <li>{{localize "WFRP4E_SIM.SimNotes.HitLocations"}}</li>
+      </ul>
+    </div>
+  </details>
+  {{/if}}
+
+  <div class="results-scroll">
+    {{#each sides}}
+    <section class="side-results">
+      <header class="side-results-header">
+        <h3>{{this.name}}</h3>
+        <span class="side-winrate">{{localize "WFRP4E_SIM.WinRate"}}: <strong>{{this.winRatePct}}%</strong> ({{this.wins}})</span>
+      </header>
+
+      <table class="combatant-results-table">
+        <thead>
+          <tr>
+            <th>{{localize "WFRP4E_SIM.Combatant"}}</th>
+            <th>{{localize "WFRP4E_SIM.WoundsInflicted"}}</th>
+            <th>{{localize "WFRP4E_SIM.WoundsReceived"}}</th>
+            <th>{{localize "WFRP4E_SIM.CritsInflicted"}}</th>
+            <th>{{localize "WFRP4E_SIM.CritsReceived"}}</th>
+            <th>{{localize "WFRP4E_SIM.AvgCritRoll"}}</th>
+            <th>{{localize "WFRP4E_SIM.DeathRate"}}</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{#each this.combatants}}
+          <tr>
+            <td class="cell-name">{{this.name}}</td>
+            <td class="cell-dist">
+              <div class="dist-mean">{{this.woundsInflicted.mean}}</div>
+              <div class="dist-detail">
+                {{localize "WFRP4E_SIM.Min"}} {{this.woundsInflicted.min}} ·
+                {{localize "WFRP4E_SIM.Max"}} {{this.woundsInflicted.max}} ·
+                {{localize "WFRP4E_SIM.Med"}} {{this.woundsInflicted.median}} ·
+                σ {{this.woundsInflicted.stddev}}
+              </div>
+            </td>
+            <td class="cell-dist">
+              <div class="dist-mean">{{this.woundsReceived.mean}}</div>
+              <div class="dist-detail">
+                {{localize "WFRP4E_SIM.Min"}} {{this.woundsReceived.min}} ·
+                {{localize "WFRP4E_SIM.Max"}} {{this.woundsReceived.max}} ·
+                {{localize "WFRP4E_SIM.Med"}} {{this.woundsReceived.median}} ·
+                σ {{this.woundsReceived.stddev}}
+              </div>
+            </td>
+            <td class="cell-dist">
+              <div class="dist-mean">{{this.criticalsInflicted.mean}}</div>
+              <div class="dist-detail">σ {{this.criticalsInflicted.stddev}}</div>
+            </td>
+            <td class="cell-dist">
+              <div class="dist-mean">{{this.criticalsReceived.mean}}</div>
+              <div class="dist-detail">σ {{this.criticalsReceived.stddev}}</div>
+            </td>
+            <td class="cell-crit">
+              <div class="crit-inflicted">+{{this.avgCriticalRollInflicted}}</div>
+              <div class="crit-received">−{{this.avgCriticalRollReceived}}</div>
+            </td>
+            <td class="cell-death">{{this.deathRatePct}}%</td>
+          </tr>
+          {{#if this.critsReceivedDetailed.length}}
+          <tr class="crit-details-row">
+            <td colspan="7">
+              <details class="crit-details">
+                <summary>
+                  <i class="fas fa-skull"></i>
+                  {{localize "WFRP4E_SIM.CritDetailsToggle"}}
+                  ({{this.critsReceivedDetailed.length}} {{localize "WFRP4E_SIM.CritDetailsUnique"}})
+                </summary>
+                <ul class="crit-list">
+                  {{#each this.critsReceivedDetailed}}
+                  <li class="crit-entry crit-severity-{{this.severity}}">
+                    <div class="crit-entry-header">
+                      <span class="crit-count">×{{this.count}}</span>
+                      <span class="crit-roll">{{this.result}}</span>
+                      <span class="crit-location">{{this.locationLabel}}</span>
+                      {{#if this.name}}<span class="crit-name">{{this.name}}</span>{{/if}}
+                      <span class="crit-severity-badge">{{this.severityLabel}}</span>
+                    </div>
+                    {{#if this.description}}
+                    <div class="crit-entry-desc">{{this.description}}</div>
+                    {{/if}}
+                    {{#if this.conditionsLabel}}
+                    <div class="crit-entry-conditions">{{this.conditionsLabel}}</div>
+                    {{/if}}
+                  </li>
+                  {{/each}}
+                </ul>
+              </details>
+            </td>
+          </tr>
+          {{/if}}
+        {{/each}}
+        </tbody>
+      </table>
+    </section>
+    {{/each}}
+  </div>
+
+  <footer class="results-footer">
+    {{#if canApply}}
+    <button type="button" data-action="applyToActors" class="apply-btn">
+      <i class="fas fa-heart-broken"></i> {{localize "WFRP4E_SIM.ApplyResults.Apply"}}
+    </button>
+    {{/if}}
+    {{#if applied}}
+    <span class="applied-notice"><i class="fas fa-check"></i> {{localize "WFRP4E_SIM.AppliedResults"}}</span>
+    {{/if}}
+    <button type="button" data-action="exportJson">
+      <i class="fas fa-download"></i> {{localize "WFRP4E_SIM.ExportJson"}}
+    </button>
+    <button type="button" data-action="closeResults">
+      <i class="fas fa-times"></i> {{localize "WFRP4E_SIM.Close"}}
+    </button>
+  </footer>
+
+</div>

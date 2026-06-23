@@ -1,0 +1,845 @@
+/* WFRP4e Combat Simulator
+ *
+ * Design philosophy: inherit from Foundry VTT + the wfrp4e system's existing
+ * stylesheet. We only style module-specific elements (drop zones, sides grid,
+ * distribution cells, predicted-winner badge). Native elements — buttons,
+ * inputs, selects, tables, window frames — use the host look-and-feel.
+ */
+
+/* ============================================ */
+/*  Layout                                      */
+/* ============================================ */
+
+.wfrp4e-sim-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.sim-header {
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  padding-bottom: 8px;
+}
+.sim-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.sim-subtitle {
+  font-size: 0.85rem;
+  margin: 4px 0 0;
+  opacity: 0.75;
+  font-style: italic;
+}
+
+/* ============================================ */
+/*  Sides grid                                  */
+/* ============================================ */
+
+.sides-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sim-side {
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.side-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.side-name-input {
+  flex: 1;
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.side-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.side-count {
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+.side-remove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  line-height: 1;
+}
+
+/* Drop zone */
+.side-dropzone {
+  flex: 1;
+  border: 2px dashed var(--color-border-dark, rgba(0, 0, 0, 0.3));
+  border-radius: 3px;
+  padding: 6px;
+  min-height: 120px;
+  transition: background 150ms, border-color 150ms;
+}
+.side-dropzone.drop-active {
+  background: rgba(120, 80, 40, 0.12);
+  border-color: var(--color-border-highlight, #ff6400);
+}
+.dropzone-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  gap: 8px;
+  font-style: italic;
+}
+.dropzone-empty i { font-size: 1.6rem; }
+
+/* Combatants */
+.combatant-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.combatant-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.combatant-row.missing { opacity: 0.6; border-style: dashed; }
+.combatant-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  object-fit: cover;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.combatant-info { flex: 1; min-width: 0; }
+.combatant-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combatant-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.missing-text { font-style: italic; }
+.combatant-remove {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.5;
+}
+.combatant-remove:hover { opacity: 1; }
+
+/* Sides actions */
+.sides-actions {
+  display: flex;
+  justify-content: center;
+}
+
+/* ============================================ */
+/*  Config section                              */
+/* ============================================ */
+
+.sim-config {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.sim-config h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  padding-bottom: 4px;
+}
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+.config-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+/* ============================================ */
+/*  Setup footer                                */
+/* ============================================ */
+
+.sim-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  padding-top: 10px;
+}
+.run-hint { font-style: italic; opacity: 0.7; font-size: 0.85rem; }
+
+/* ============================================ */
+/*  Results layout                              */
+/* ============================================ */
+
+.results-layout { display: flex; flex-direction: column; gap: 12px; height: 100%; }
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  padding-bottom: 10px;
+  flex-wrap: wrap;
+}
+.results-title { margin: 0; font-size: 1.25rem; }
+.results-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.predicted-winner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(163, 122, 45, 0.15);
+  border: 1px solid #a37a2d;
+  padding: 6px 14px;
+  border-radius: 3px;
+}
+.predicted-winner i { color: #a37a2d; font-size: 1.2rem; }
+.winner-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.75;
+}
+.winner-name { font-weight: 700; font-size: 1.05rem; }
+.winner-rate { font-weight: 700; color: #a37a2d; }
+
+.results-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.side-results {
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.side-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  margin-bottom: 8px;
+}
+.side-results-header h3 { margin: 0; font-size: 1.1rem; }
+.side-winrate { font-size: 0.9rem; }
+
+/* ============================================ */
+/*  Results table                               */
+/* ============================================ */
+
+/* Explicit readable colors on table headers — the default wfrp4e theme
+ * has very low contrast at small text sizes over parchment backgrounds. */
+.combatant-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.combatant-results-table th,
+.combatant-results-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  text-align: left;
+  vertical-align: top;
+}
+.combatant-results-table thead th {
+  background: #3c1e1e;
+  color: #f3ead0;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 6px 8px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.3);
+}
+.cell-name { font-weight: 600; }
+.cell-dist .dist-mean { font-weight: 700; font-size: 1rem; }
+.cell-dist .dist-detail {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+.cell-crit { font-size: 0.85rem; line-height: 1.3; }
+.cell-crit .crit-inflicted { color: #2e7031; font-weight: 600; }
+.cell-crit .crit-received { color: #8c1f1f; font-weight: 600; }
+.cell-death { font-weight: 600; }
+
+/* Crit details expander */
+.crit-details-row > td {
+  padding: 0 !important;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.15));
+}
+.crit-details {
+  padding: 4px 8px 8px;
+  font-size: 0.82rem;
+}
+.crit-details > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-weight: 600;
+  opacity: 0.8;
+  user-select: none;
+  list-style: revert;
+}
+.crit-details > summary:hover { opacity: 1; }
+.crit-details > summary i { margin-right: 4px; color: #8c1f1f; }
+.crit-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.crit-entry {
+  padding: 6px 8px;
+  border-left: 3px solid rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 0 3px 3px 0;
+}
+.crit-entry.crit-severity-minor   { border-left-color: #7a8f50; }
+.crit-entry.crit-severity-serious { border-left-color: #c98a3e; }
+.crit-entry.crit-severity-major   { border-left-color: #a03828; }
+.crit-entry.crit-severity-lethal  { border-left-color: #3c1e1e; }
+
+.crit-entry-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.crit-count {
+  font-weight: 700;
+  color: #8c1f1f;
+  min-width: 28px;
+}
+.crit-roll {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+.crit-roll::before { content: "roll "; opacity: 0.7; }
+.crit-location {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.75;
+}
+.crit-name { font-weight: 600; }
+.crit-severity-badge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.1);
+}
+.crit-entry-desc {
+  font-size: 0.82rem;
+  opacity: 0.85;
+  margin: 2px 0 4px;
+  line-height: 1.35;
+}
+.crit-entry-conditions {
+  font-size: 0.75rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+/* ============================================ */
+/*  Results footer                              */
+/* ============================================ */
+
+.results-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+  border-top: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  padding-top: 10px;
+}
+.results-footer .apply-btn { margin-right: auto; }
+.applied-notice {
+  color: #2e7031;
+  font-weight: 600;
+  margin-right: auto;
+  font-style: italic;
+}
+.applied-notice i { margin-right: 4px; }
+
+/* ============================================ */
+/*  Apply preview dialog                        */
+/* ============================================ */
+
+.sim-apply-preview p {
+  margin: 0 0 10px;
+}
+.sim-apply-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.sim-apply-actor {
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.04);
+}
+.sim-apply-actor h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+  border-bottom: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.2));
+  padding-bottom: 3px;
+}
+.sim-apply-actor ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.sim-apply-actor li { padding: 2px 0; }
+.sim-apply-actor li i { margin-right: 4px; color: #8c1f1f; }
+.sim-apply-crit strong { color: #8c1f1f; }
+.sim-apply-nocrit { opacity: 0.6; font-style: italic; }
+.sim-apply-meta {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+/* Probabilistic Apply: crit distribution bars (v0.1.11) */
+
+.sim-apply-reroll-hint {
+  font-size: 0.75rem;
+  opacity: 0.65;
+  font-style: italic;
+  margin: -4px 0 10px;
+}
+
+.sim-apply-nocrits-ever {
+  margin-top: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  opacity: 0.7;
+  font-style: italic;
+  border-left: 3px solid rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.03);
+}
+.sim-apply-nocrits-ever i { margin-right: 6px; color: #4a6b3a; }
+
+.sim-dist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--color-border-dark, rgba(0, 0, 0, 0.2));
+}
+.sim-dist-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.sim-dist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.sim-dist-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 2fr auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 2px 4px;
+  border-radius: 2px;
+}
+.sim-dist-row.sim-dist-rolled {
+  background: rgba(140, 31, 31, 0.12);
+  font-weight: 600;
+}
+.sim-dist-row.sim-dist-nocrit .sim-dist-label {
+  font-style: italic;
+  opacity: 0.75;
+}
+.sim-dist-row.sim-dist-nocrit.sim-dist-rolled {
+  background: rgba(74, 107, 58, 0.15);
+}
+.sim-dist-row.sim-dist-nocrit.sim-dist-rolled .sim-dist-label {
+  opacity: 1;
+  color: #4a6b3a;
+}
+
+.sim-dist-marker {
+  color: #8c1f1f;
+  font-size: 0.9rem;
+  text-align: center;
+}
+.sim-dist-row.sim-dist-nocrit.sim-dist-rolled .sim-dist-marker {
+  color: #4a6b3a;
+}
+.sim-dist-marker-spacer {
+  display: inline-block;
+  width: 14px;
+}
+
+.sim-dist-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-dist-bar-wrap {
+  height: 10px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sim-dist-bar {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(140, 31, 31, 0.6), rgba(140, 31, 31, 0.85));
+  min-width: 2px;
+}
+.sim-dist-row.sim-dist-nocrit .sim-dist-bar {
+  background: linear-gradient(90deg, rgba(74, 107, 58, 0.55), rgba(74, 107, 58, 0.75));
+}
+.sim-dist-row.sim-dist-rolled .sim-dist-bar {
+  background: linear-gradient(90deg, rgba(140, 31, 31, 0.85), rgba(190, 50, 50, 1));
+  box-shadow: 0 0 4px rgba(140, 31, 31, 0.4);
+}
+.sim-dist-row.sim-dist-nocrit.sim-dist-rolled .sim-dist-bar {
+  background: linear-gradient(90deg, rgba(74, 107, 58, 0.8), rgba(110, 150, 90, 1));
+  box-shadow: 0 0 4px rgba(74, 107, 58, 0.4);
+}
+
+.sim-dist-stats {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sim-dist-row.sim-dist-rolled .sim-dist-stats {
+  opacity: 1;
+}
+
+.sim-dist-rolled-summary {
+  margin-top: 6px;
+  padding: 4px 6px;
+  font-size: 0.8rem;
+  border-left: 3px solid #8c1f1f;
+  background: rgba(140, 31, 31, 0.06);
+}
+.sim-dist-rolled-summary i { margin-right: 4px; color: #8c1f1f; }
+
+/* Wound-distribution color variant (steel blue), to visually separate
+   the wound section from the crit section in the Apply preview. */
+
+.sim-dist-row.sim-dist-wound .sim-dist-bar {
+  background: linear-gradient(90deg, rgba(44, 77, 109, 0.55), rgba(44, 77, 109, 0.8));
+}
+.sim-dist-row.sim-dist-wound.sim-dist-rolled .sim-dist-bar {
+  background: linear-gradient(90deg, rgba(44, 77, 109, 0.85), rgba(70, 115, 160, 1));
+  box-shadow: 0 0 4px rgba(44, 77, 109, 0.4);
+}
+.sim-dist-row.sim-dist-wound.sim-dist-rolled {
+  background: rgba(44, 77, 109, 0.12);
+}
+.sim-dist-row.sim-dist-wound.sim-dist-rolled .sim-dist-marker {
+  color: #2c4d6d;
+}
+
+.sim-dist-other {
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.6;
+  padding: 2px 4px 0 20px;
+}
+
+.sim-dist-warning {
+  color: #b07a1a;
+  font-size: 0.75rem;
+  margin-left: 4px;
+  cursor: help;
+}
+.sim-dist-row.sim-dist-unapplicable .sim-dist-bar {
+  background: linear-gradient(90deg,
+    rgba(176, 122, 26, 0.55),
+    rgba(176, 122, 26, 0.8)
+  );
+}
+.sim-dist-row.sim-dist-unapplicable.sim-dist-rolled .sim-dist-bar {
+  background: linear-gradient(90deg,
+    rgba(176, 122, 26, 0.8),
+    rgba(220, 160, 50, 1)
+  );
+  box-shadow: 0 0 4px rgba(176, 122, 26, 0.4);
+}
+.sim-dist-row.sim-dist-unapplicable.sim-dist-rolled .sim-dist-marker {
+  color: #b07a1a;
+}
+
+/* ============================================ */
+/*  Actors sidebar header button                */
+/* ============================================ */
+
+/* Minimal styling — inherits Foundry button theme. */
+.wfrp4e-sim-open {
+  width: 100%;
+  margin: 4px 0;
+}
+.wfrp4e-sim-open i { margin-right: 4px; }
+
+/* ============================================ */
+/*  Narrative summary (v0.1.15)                 */
+/* ============================================ */
+
+.sim-narrative {
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  margin: 0 0 12px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.sim-narrative-summary {
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.sim-narrative-summary::-webkit-details-marker { display: none; }
+.sim-narrative-summary::before {
+  content: "\25B6";  /* right-pointing triangle */
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+.sim-narrative[open] .sim-narrative-summary::before {
+  transform: rotate(90deg);
+}
+.sim-narrative-summary i { margin-right: 6px; color: #8c1f1f; }
+
+.sim-narrative-body {
+  padding: 4px 14px 12px;
+}
+.sim-narrative-clinical p {
+  margin: 2px 0 8px;
+  line-height: 1.45;
+  font-size: 0.88rem;
+}
+.sim-narrative-sides {
+  list-style: disc;
+  margin: 4px 0 8px 20px;
+  padding: 0;
+}
+.sim-narrative-sides li {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin: 2px 0;
+}
+
+.sim-narrative-flavor-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border-dark, rgba(0, 0, 0, 0.2));
+}
+.sim-narrative-flavor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.sim-narrative-flavor-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.8;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.sim-narrative-flavor-label i { margin-right: 4px; color: #8c1f1f; }
+
+.sim-narrative-regenerate {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: inherit;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.sim-narrative-regenerate:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.sim-narrative-flavor {
+  min-height: 1.6em;
+}
+.sim-narrative-flavor p {
+  margin: 0;
+  font-style: italic;
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+.sim-narrative-loading {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+.sim-narrative-loading i { margin-right: 4px; }
+
+.sim-narrative-flavor-error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #8c1f1f;
+  font-style: italic;
+}
+.sim-narrative-flavor-error i { margin-right: 4px; }
+
+.sim-narrative-no-key {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.7;
+  padding: 6px 8px;
+  border-left: 3px solid rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.03);
+}
+.sim-narrative-no-key i { margin-right: 4px; }
+
+/* ============================================ */
+/*  Sim Notes (fidelity disclosures) - v0.1.19  */
+/* ============================================ */
+
+.sim-notes {
+  border: 1px solid var(--color-border-dark, rgba(0, 0, 0, 0.25));
+  border-radius: 3px;
+  margin: 0 0 12px;
+  background: rgba(0, 0, 0, 0.03);
+}
+.sim-notes-summary {
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  opacity: 0.75;
+}
+.sim-notes-summary::-webkit-details-marker { display: none; }
+.sim-notes-summary::before {
+  content: "\25B6";
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+.sim-notes[open] .sim-notes-summary::before {
+  transform: rotate(90deg);
+}
+.sim-notes-summary i {
+  margin-right: 6px;
+  color: #b07a1a;
+}
+
+.sim-notes-body {
+  padding: 4px 14px 12px;
+}
+.sim-notes-intro {
+  margin: 2px 0 6px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+.sim-notes-list {
+  list-style: disc;
+  margin: 4px 0 0 20px;
+  padding: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+.sim-notes-list li { margin: 2px 0; }
+
+.sim-notes-flag {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  border-left: 3px solid #b07a1a;
+  background: rgba(176, 122, 26, 0.08);
+}
+.sim-notes-flag i { margin-right: 4px; color: #b07a1a; }
+
+.sim-notes-paths {
+  margin-left: 8px;
+  font-size: 0.72rem;
+  opacity: 0.7;
+  cursor: help;
+}

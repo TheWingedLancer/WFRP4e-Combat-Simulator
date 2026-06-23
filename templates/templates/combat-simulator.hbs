@@ -1,0 +1,102 @@
+{{!-- Combat Simulator setup UI --}}
+<div class="wfrp4e-sim-layout">
+
+  <header class="sim-header">
+    <h2 class="sim-title">{{localize "WFRP4E_SIM.AssembleSides"}}</h2>
+    <p class="sim-subtitle">{{localize "WFRP4E_SIM.DragActors"}}</p>
+  </header>
+
+  <section class="sides-container">
+    {{#each sides}}
+    <div class="sim-side" data-side-id="{{this.id}}">
+      <header class="side-header">
+        <input type="text" class="side-name-input" data-side-name="{{this.id}}" value="{{this.name}}" />
+        {{#if @root.canRemoveSides}}{{/if}}
+        <div class="side-header-actions">
+          <span class="side-count">{{this.combatants.length}}</span>
+          <button type="button" class="side-remove" data-action="removeSide" data-side-id="{{this.id}}" title="{{localize 'WFRP4E_SIM.RemoveSide'}}">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+      </header>
+
+      <div class="side-dropzone" data-side-id="{{this.id}}">
+        {{#if this.combatantsDetailed.length}}
+          <ul class="combatant-list">
+            {{#each this.combatantsDetailed}}
+            <li class="combatant-row {{#if this.missing}}missing{{/if}}">
+              {{#unless this.missing}}
+                <img class="combatant-img" src="{{this.img}}" data-action="openActor" data-actor-id="{{this.actorId}}" alt="{{this.name}}"/>
+              {{/unless}}
+              <div class="combatant-info">
+                <div class="combatant-name">{{this.name}}</div>
+                {{#unless this.missing}}
+                <div class="combatant-stats">
+                  <span title="Weapon Skill">WS {{this.ws}}</span>
+                  <span title="Ballistic Skill">BS {{this.bs}}</span>
+                  <span title="Wounds">W {{this.wounds}}/{{this.woundsMax}}</span>
+                </div>
+                {{/unless}}
+                {{#if this.missing}}
+                <div class="combatant-stats missing-text">{{localize "WFRP4E_SIM.ActorMissing"}}</div>
+                {{/if}}
+              </div>
+              <button type="button" class="combatant-remove" data-action="removeCombatant"
+                data-side-id="{{../this.id}}" data-combatant-id="{{this.id}}"
+                title="{{localize 'WFRP4E_SIM.RemoveCombatant'}}">
+                <i class="fas fa-times"></i>
+              </button>
+            </li>
+            {{/each}}
+          </ul>
+        {{else}}
+          <div class="dropzone-empty">
+            <i class="fas fa-hand-rock"></i>
+            <span>{{localize "WFRP4E_SIM.DragHere"}}</span>
+          </div>
+        {{/if}}
+      </div>
+    </div>
+    {{/each}}
+  </section>
+
+  <div class="sides-actions">
+    <button type="button" data-action="addSide" class="add-side-btn">
+      <i class="fas fa-plus"></i> {{localize "WFRP4E_SIM.AddSide"}}
+    </button>
+  </div>
+
+  <section class="sim-config">
+    <h3>{{localize "WFRP4E_SIM.Config"}}</h3>
+    <div class="config-grid">
+      <label>
+        <span>{{localize "WFRP4E_SIM.Iterations"}}</span>
+        <input type="number" data-config="iterations" value="{{config.iterations}}" min="10" max="10000" step="10"/>
+      </label>
+      <label>
+        <span>{{localize "WFRP4E_SIM.MaxRounds"}}</span>
+        <input type="number" data-config="maxRounds" value="{{config.maxRounds}}" min="1" max="100" step="1"/>
+      </label>
+      <label>
+        <span>{{localize "WFRP4E_SIM.VictoryCondition"}}</span>
+        <select data-config="victoryCondition">
+          {{selectOptions victoryConditions selected=config.victoryCondition localize=true}}
+        </select>
+      </label>
+      <label>
+        <span>{{localize "WFRP4E_SIM.StartingRange"}}</span>
+        <select data-config="startingRange">
+          {{selectOptions startingRanges selected=config.startingRange localize=true}}
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <footer class="sim-footer">
+    <button type="button" class="run-sim-btn" data-action="runSimulation" {{#unless canRun}}disabled{{/unless}}>
+      <i class="fas fa-swords"></i> {{localize "WFRP4E_SIM.Run"}}
+    </button>
+    {{#unless canRun}}<span class="run-hint">{{localize "WFRP4E_SIM.NeedTwoSides"}}</span>{{/unless}}
+  </footer>
+
+</div>
